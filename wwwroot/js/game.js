@@ -1,0 +1,861 @@
+// Asteroid Escape Game Engine
+// Controls: A/D keys for left/right movement (Test Mode)
+// Arduino MKR WiFi 1010 for controller mode
+
+const GameEngine = {
+  canvas: null,
+  ctx: null,
+  gameLoop: null,
+  dotNetHelper: null,
+  teamName: '',
+  isTestMode: true, // true = keyboard controls, false = Arduino only
+
+  // Game State
+  state: {
+    running: false,
+    paused: false,
+    gameOver: false,
+    score: 0,
+    displayScore: 0, // For smooth score animation
+    multiplier: 1.0,
+    highScore: parseInt(localStorage.getItem('asteroidEscapeHighScore') || '0'),
+    phase: 'earth', // 'earth' or 'space'
+    phaseTransitionScore: 10000, // Score to start transitioning to space
+    phaseTransitionComplete: 20000, // Score where fully in space
+    transitionProgress: 0, // 0 = full earth, 1 = full space
+    lastScoreTime: 0,
+    scoreInterval: 1000, // 1 second for 100 points
+    pointsPerInterval: 100,
+    multiplierThreshold: 10000, // Every 10000 points
+    multiplierFactor: 0.3, // Multiply by this amount
+  },
+
+  // Rocket properties
+  rocket: {
+    x: 0,
+    y: 0,
+    width: 40,
+    height: 70,
+    speed: 8,
+    movingLeft: false,
+    movingRight: false,
+  },
+
+  // Obstacles
+  obstacles: [],
+  obstacleSpawnRate: 1500, // milliseconds
+  lastObstacleSpawn: 0,
+  minObstacleSpawnRate: 500,
+
+  // Visual settings - Sky to Space transition
+  colors: {
+    sky: {
+      top: '#87CEEB',    // Light sky blue
+      middle: '#5DADE2', // Deeper sky blue  
+      bottom: '#85C1E9', // Light blue
+    },
+    space: {
+      top: '#0a0a1a',
+      middle: '#0d0d2b',
+      bottom: '#050510',
+    }
+  },
+
+  stars: [],
+  clouds: [],
+
+  // Initialize the game
+  init: function (canvasId, dotNetHelper, teamName, isTestMode) {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) {
+      console.error('Canvas not found:', canvasId);
+      return false;
+    }
+
+    this.ctx = this.canvas.getContext('2d');
+    this.dotNetHelper = dotNetHelper;
+    this.teamName = teamName || 'Unknown';
+    this.isTestMode = isTestMode !== false; // Default to true if not specified
+
+    // Set canvas size
+    this.resizeCanvas();
+    window.addEventListener('resize', () => this.resizeCanvas());
+
+    // Initialize stars and clouds
+    this.initStars();
+    this.initClouds();
+
+    // Set up keyboard controls (only in test mode)
+    if (this.isTestMode) {
+      this.setupControls();
+    }
+
+    return true;
+  },
+
+  resizeCanvas: function () {
+    this.canvas.width = this.canvas.offsetWidth;
+    this.canvas.height = this.canvas.offsetHeight;
+
+    // Reposition rocket
+    this.rocket.x = this.canvas.width / 2 - this.rocket.width / 2;
+    this.rocket.y = this.canvas.height - this.rocket.height - 30;
+
+    // Reinitialize clouds for new size
+    this.initClouds();
+  },
+
+  initStars: function () {
+    this.stars = [];
+    const starCount = 150;
+    for (let i = 0; i < starCount; i++) {
+      this.stars.push({
+        x: Math.random() * 2000,
+        y: Math.random() * 2000,
+        radius: Math.random() * 2 + 0.5,
+        opacity: Math.random() * 0.8 + 0.2,
+        twinkleSpeed: Math.random() * 0.02 + 0.01,
+        twinklePhase: Math.random() * Math.PI * 2,
+      });
+    }
+  },
+
+  initClouds: function () {
+    this.clouds = [];
+    const cloudCount = 8;
+    for (let i = 0; i < cloudCount; i++) {
+      this.clouds.push({
+        x: Math.random() * (this.canvas.width + 200) - 100,
+        y: Math.random() * this.canvas.height,
+        width: 80 + Math.random() * 120,
+        height: 40 + Math.random() * 40,
+        speed: 0.3 + Math.random() * 0.5,
+        opacity: 0.6 + Math.random() * 0.4,
+      });
+    }
+  },
+
+  setupControls: function () {
+    document.addEventListener('keydown', (e) => {
+      if (!this.state.running || this.state.gameOver) return;
+
+      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+        this.rocket.movingLeft = true;
+      }
+      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+        this.rocket.movingRight = true;
+      }
+      if (e.key === 'Escape') {
+        this.togglePause();
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+        this.rocket.movingLeft = false;
+      }
+      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+        this.rocket.movingRight = false;
+      }
+    });
+  },
+
+  // Start the game
+  start: function () {
+    this.reset();
+    this.state.running = true;
+    this.state.lastScoreTime = performance.now();
+    this.lastObstacleSpawn = performance.now();
+    this.gameLoop = requestAnimationFrame((t) => this.update(t));
+  },
+
+  reset: function () {
+    this.state.gameOver = false;
+    this.state.paused = false;
+    this.state.score = 0;
+    this.state.displayScore = 0;
+    this.state.multiplier = 1.0;
+    this.state.phase = 'earth';
+    this.state.transitionProgress = 0;
+    this.obstacles = [];
+    this.obstacleSpawnRate = 1500;
+    this.rocket.x = this.canvas.width / 2 - this.rocket.width / 2;
+    this.rocket.movingLeft = false;
+    this.rocket.movingRight = false;
+    this.initClouds();
+  },
+
+  togglePause: function () {
+    this.state.paused = !this.state.paused;
+    if (!this.state.paused) {
+      this.state.lastScoreTime = performance.now();
+      this.lastObstacleSpawn = performance.now();
+    }
+  },
+
+  // Main game loop
+  update: function (timestamp) {
+    if (!this.state.running) return;
+
+    if (!this.state.paused && !this.state.gameOver) {
+      // Update score (100 points every second, affected by multiplier)
+      if (timestamp - this.state.lastScoreTime >= this.state.scoreInterval) {
+        const pointsToAdd = Math.floor(this.state.pointsPerInterval * this.state.multiplier);
+        this.state.score += pointsToAdd;
+        this.state.lastScoreTime = timestamp;
+
+        // Calculate multiplier based on score thresholds
+        // Every 10000 points, add another 0.3 to the multiplier
+        const thresholdsPassed = Math.floor(this.state.score / this.state.multiplierThreshold);
+        this.state.multiplier = 1.0 + (thresholdsPassed * this.state.multiplierFactor);
+
+        this.notifyScoreUpdate();
+
+        // Calculate phase transition progress (0 to 1)
+        if (this.state.score >= this.state.phaseTransitionScore) {
+          const transitionRange = this.state.phaseTransitionComplete - this.state.phaseTransitionScore;
+          this.state.transitionProgress = Math.min(1,
+            (this.state.score - this.state.phaseTransitionScore) / transitionRange);
+
+          if (this.state.transitionProgress >= 1 && this.state.phase === 'earth') {
+            this.state.phase = 'space';
+            this.notifyPhaseChange();
+          }
+        }
+
+        // Increase difficulty based on score
+        this.obstacleSpawnRate = Math.max(this.minObstacleSpawnRate, 1500 - (this.state.score / 100));
+      }
+
+      // Smooth score display animation
+      if (this.state.displayScore < this.state.score) {
+        this.state.displayScore += Math.ceil((this.state.score - this.state.displayScore) / 10);
+      }
+
+      // Move rocket
+      this.updateRocket();
+
+      // Update clouds
+      this.updateClouds();
+
+      // Spawn obstacles
+      if (timestamp - this.lastObstacleSpawn >= this.obstacleSpawnRate) {
+        this.spawnObstacle();
+        this.lastObstacleSpawn = timestamp;
+      }
+
+      // Update obstacles
+      this.updateObstacles();
+
+      // Check collisions
+      if (this.checkCollisions()) {
+        this.endGame();
+      }
+    }
+
+    // Render
+    this.render(timestamp);
+
+    // Continue loop
+    this.gameLoop = requestAnimationFrame((t) => this.update(t));
+  },
+
+  updateRocket: function () {
+    if (this.rocket.movingLeft) {
+      this.rocket.x -= this.rocket.speed;
+    }
+    if (this.rocket.movingRight) {
+      this.rocket.x += this.rocket.speed;
+    }
+
+    // Keep rocket in bounds
+    this.rocket.x = Math.max(0, Math.min(this.canvas.width - this.rocket.width, this.rocket.x));
+  },
+
+  updateClouds: function () {
+    for (const cloud of this.clouds) {
+      cloud.y += cloud.speed;
+
+      // Reset cloud when it goes off screen
+      if (cloud.y > this.canvas.height + cloud.height) {
+        cloud.y = -cloud.height;
+        cloud.x = Math.random() * (this.canvas.width + 200) - 100;
+      }
+    }
+  },
+
+  spawnObstacle: function () {
+    // Mix obstacles based on transition progress
+    const inTransition = this.state.transitionProgress > 0 && this.state.transitionProgress < 1;
+    let types;
+
+    if (this.state.phase === 'space' || this.state.transitionProgress >= 1) {
+      types = ['asteroid', 'asteroid', 'satellite'];
+    } else if (inTransition) {
+      // During transition, mix both types
+      const spaceChance = this.state.transitionProgress;
+      if (Math.random() < spaceChance) {
+        types = ['asteroid', 'asteroid', 'satellite'];
+      } else {
+        types = ['bird', 'bird', 'bird'];
+      }
+    } else {
+      types = ['bird', 'bird', 'bird'];
+    }
+
+    const type = types[Math.floor(Math.random() * types.length)];
+    const size = type === 'satellite' ? 50 : (30 + Math.random() * 30);
+
+    this.obstacles.push({
+      x: Math.random() * (this.canvas.width - size),
+      y: -size,
+      width: size,
+      height: size,
+      speed: 3 + Math.random() * 3 + (this.state.score / 1000),
+      type: type,
+      rotation: 0,
+      rotationSpeed: (Math.random() - 0.5) * 0.1,
+    });
+  },
+
+  updateObstacles: function () {
+    for (let i = this.obstacles.length - 1; i >= 0; i--) {
+      const obs = this.obstacles[i];
+      obs.y += obs.speed;
+      obs.rotation += obs.rotationSpeed;
+
+      // Remove off-screen obstacles
+      if (obs.y > this.canvas.height) {
+        this.obstacles.splice(i, 1);
+      }
+    }
+  },
+
+  checkCollisions: function () {
+    const rocketHitbox = {
+      x: this.rocket.x + 5,
+      y: this.rocket.y + 10,
+      width: this.rocket.width - 10,
+      height: this.rocket.height - 20,
+    };
+
+    for (const obs of this.obstacles) {
+      if (this.rectIntersects(rocketHitbox, obs)) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  rectIntersects: function (a, b) {
+    return a.x < b.x + b.width &&
+      a.x + a.width > b.x &&
+      a.y < b.y + b.height &&
+      a.y + a.height > b.y;
+  },
+
+  endGame: function () {
+    this.state.gameOver = true;
+
+    // Update high score
+    if (this.state.score > this.state.highScore) {
+      this.state.highScore = this.state.score;
+      localStorage.setItem('asteroidEscapeHighScore', this.state.highScore.toString());
+    }
+
+    this.notifyGameOver();
+  },
+
+  // Rendering
+  render: function (timestamp) {
+    const ctx = this.ctx;
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+
+    // Draw background with sky-to-space transition
+    this.drawBackground(timestamp);
+
+    // Draw clouds (fade out as we go to space)
+    if (this.state.transitionProgress < 1) {
+      this.drawClouds();
+    }
+
+    // Draw stars (fade in as we go to space)
+    this.drawStars(timestamp);
+
+    // Draw obstacles
+    this.drawObstacles();
+
+    // Draw rocket
+    this.drawRocket();
+
+    // Draw pause overlay
+    if (this.state.paused) {
+      this.drawPauseOverlay();
+    }
+
+    // Draw game over overlay
+    if (this.state.gameOver) {
+      this.drawGameOverOverlay();
+    }
+  },
+
+  // Interpolate between two colors
+  lerpColor: function (color1, color2, t) {
+    // Parse hex colors
+    const c1 = {
+      r: parseInt(color1.slice(1, 3), 16),
+      g: parseInt(color1.slice(3, 5), 16),
+      b: parseInt(color1.slice(5, 7), 16)
+    };
+    const c2 = {
+      r: parseInt(color2.slice(1, 3), 16),
+      g: parseInt(color2.slice(3, 5), 16),
+      b: parseInt(color2.slice(5, 7), 16)
+    };
+
+    const r = Math.round(c1.r + (c2.r - c1.r) * t);
+    const g = Math.round(c1.g + (c2.g - c1.g) * t);
+    const b = Math.round(c1.b + (c2.b - c1.b) * t);
+
+    return `rgb(${r}, ${g}, ${b})`;
+  },
+
+  drawBackground: function (timestamp) {
+    const t = this.state.transitionProgress;
+
+    // Interpolate between sky and space colors
+    const topColor = this.lerpColor(this.colors.sky.top, this.colors.space.top, t);
+    const midColor = this.lerpColor(this.colors.sky.middle, this.colors.space.middle, t);
+    const botColor = this.lerpColor(this.colors.sky.bottom, this.colors.space.bottom, t);
+
+    const gradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+    gradient.addColorStop(0, topColor);
+    gradient.addColorStop(0.5, midColor);
+    gradient.addColorStop(1, botColor);
+
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  },
+
+  drawClouds: function () {
+    const ctx = this.ctx;
+    const cloudOpacity = 1 - this.state.transitionProgress;
+
+    for (const cloud of this.clouds) {
+      ctx.save();
+      ctx.globalAlpha = cloud.opacity * cloudOpacity;
+
+      // Draw fluffy cloud using multiple circles
+      ctx.fillStyle = '#ffffff';
+
+      const cx = cloud.x + cloud.width / 2;
+      const cy = cloud.y + cloud.height / 2;
+
+      // Main cloud body
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, cloud.width / 2, cloud.height / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Left puff
+      ctx.beginPath();
+      ctx.ellipse(cx - cloud.width * 0.3, cy + cloud.height * 0.1, cloud.width * 0.3, cloud.height * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Right puff
+      ctx.beginPath();
+      ctx.ellipse(cx + cloud.width * 0.3, cy + cloud.height * 0.05, cloud.width * 0.35, cloud.height * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Top puff
+      ctx.beginPath();
+      ctx.ellipse(cx + cloud.width * 0.1, cy - cloud.height * 0.2, cloud.width * 0.25, cloud.height * 0.35, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+  },
+
+  drawStars: function (timestamp) {
+    const ctx = this.ctx;
+    // Stars fade in as we transition to space
+    const starOpacity = this.state.transitionProgress;
+
+    // Also show some faint stars even in sky (like high altitude)
+    const baseOpacity = 0.1;
+    const effectiveOpacity = baseOpacity + (1 - baseOpacity) * starOpacity;
+
+    for (const star of this.stars) {
+      const twinkle = Math.sin(timestamp * star.twinkleSpeed + star.twinklePhase) * 0.3 + 0.7;
+      const x = star.x % this.canvas.width;
+      const y = star.y % this.canvas.height;
+
+      ctx.beginPath();
+      ctx.arc(x, y, star.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity * twinkle * effectiveOpacity})`;
+      ctx.fill();
+    }
+  },
+
+  drawRocket: function () {
+    const ctx = this.ctx;
+    const r = this.rocket;
+
+    ctx.save();
+    ctx.translate(r.x + r.width / 2, r.y + r.height / 2);
+
+    // Rocket body
+    ctx.fillStyle = '#e8e8e8';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r.width / 2 - 5, r.height / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body gradient overlay
+    const bodyGradient = ctx.createLinearGradient(-r.width / 2, 0, r.width / 2, 0);
+    bodyGradient.addColorStop(0, 'rgba(200,200,200,0.8)');
+    bodyGradient.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+    bodyGradient.addColorStop(1, 'rgba(150,150,150,0.8)');
+    ctx.fillStyle = bodyGradient;
+    ctx.fill();
+
+    // Window
+    ctx.fillStyle = '#00d4ff';
+    ctx.beginPath();
+    ctx.arc(0, -r.height / 4, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#88ccff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Fins
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath();
+    ctx.moveTo(-r.width / 2 - 5, r.height / 2 - 10);
+    ctx.lineTo(-r.width / 2 + 5, r.height / 2 - 25);
+    ctx.lineTo(-r.width / 2 + 5, r.height / 2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(r.width / 2 + 5, r.height / 2 - 10);
+    ctx.lineTo(r.width / 2 - 5, r.height / 2 - 25);
+    ctx.lineTo(r.width / 2 - 5, r.height / 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Exhaust flame
+    if (!this.state.gameOver) {
+      const flameHeight = 25 + Math.random() * 10;
+      const flameGradient = ctx.createLinearGradient(0, r.height / 2, 0, r.height / 2 + flameHeight);
+      flameGradient.addColorStop(0, '#ffff00');
+      flameGradient.addColorStop(0.4, '#ff8800');
+      flameGradient.addColorStop(0.7, '#ff4400');
+      flameGradient.addColorStop(1, 'transparent');
+
+      ctx.fillStyle = flameGradient;
+      ctx.beginPath();
+      ctx.moveTo(-8, r.height / 2);
+      ctx.quadraticCurveTo(-10, r.height / 2 + flameHeight * 0.6, 0, r.height / 2 + flameHeight);
+      ctx.quadraticCurveTo(10, r.height / 2 + flameHeight * 0.6, 8, r.height / 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore();
+  },
+
+  drawObstacles: function () {
+    const ctx = this.ctx;
+
+    for (const obs of this.obstacles) {
+      ctx.save();
+      ctx.translate(obs.x + obs.width / 2, obs.y + obs.height / 2);
+      ctx.rotate(obs.rotation);
+
+      if (obs.type === 'bird') {
+        this.drawBird(ctx, obs.width);
+      } else if (obs.type === 'asteroid') {
+        this.drawAsteroid(ctx, obs.width);
+      } else if (obs.type === 'satellite') {
+        this.drawSatellite(ctx, obs.width);
+      }
+
+      ctx.restore();
+    }
+  },
+
+  drawBird: function (ctx, size) {
+    const s = size / 2;
+
+    // Body
+    ctx.fillStyle = '#4a4a4a';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.6, s * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wings
+    ctx.fillStyle = '#3a3a3a';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.3, 0);
+    ctx.quadraticCurveTo(-s, -s * 0.8, -s * 0.2, -s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(s * 0.3, 0);
+    ctx.quadraticCurveTo(s, -s * 0.8, s * 0.2, -s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.5, 0);
+    ctx.lineTo(s * 0.8, s * 0.1);
+    ctx.lineTo(s * 0.5, s * 0.15);
+    ctx.closePath();
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s * 0.2, -s * 0.1, s * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(s * 0.22, -s * 0.1, s * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawAsteroid: function (ctx, size) {
+    const s = size / 2;
+
+    // Irregular asteroid shape
+    ctx.fillStyle = '#6a5a4a';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.8, 0);
+    ctx.lineTo(s * 0.6, s * 0.7);
+    ctx.lineTo(-s * 0.3, s * 0.8);
+    ctx.lineTo(-s * 0.9, s * 0.3);
+    ctx.lineTo(-s * 0.7, -s * 0.5);
+    ctx.lineTo(-s * 0.2, -s * 0.8);
+    ctx.lineTo(s * 0.5, -s * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    // Craters
+    ctx.fillStyle = '#4a3a2a';
+    ctx.beginPath();
+    ctx.arc(-s * 0.2, s * 0.1, s * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(s * 0.3, -s * 0.2, s * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath();
+    ctx.arc(-s * 0.4, -s * 0.4, s * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawSatellite: function (ctx, size) {
+    const s = size / 2;
+
+    // Main body
+    ctx.fillStyle = '#888888';
+    ctx.fillRect(-s * 0.25, -s * 0.4, s * 0.5, s * 0.8);
+
+    // Solar panels
+    ctx.fillStyle = '#3366aa';
+    ctx.fillRect(-s * 0.9, -s * 0.25, s * 0.6, s * 0.5);
+    ctx.fillRect(s * 0.3, -s * 0.25, s * 0.6, s * 0.5);
+
+    // Panel lines
+    ctx.strokeStyle = '#2255aa';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const x1 = -s * 0.85 + i * s * 0.15;
+      ctx.beginPath();
+      ctx.moveTo(x1, -s * 0.25);
+      ctx.lineTo(x1, s * 0.25);
+      ctx.stroke();
+
+      const x2 = s * 0.35 + i * s * 0.15;
+      ctx.beginPath();
+      ctx.moveTo(x2, -s * 0.25);
+      ctx.lineTo(x2, s * 0.25);
+      ctx.stroke();
+    }
+
+    // Antenna
+    ctx.strokeStyle = '#666666';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.4);
+    ctx.lineTo(0, -s * 0.7);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath();
+    ctx.arc(0, -s * 0.7, s * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawPauseOverlay: function () {
+    const ctx = this.ctx;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 48px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', this.canvas.width / 2, this.canvas.height / 2);
+
+    ctx.font = '20px system-ui, sans-serif';
+    ctx.fillStyle = '#aaaaaa';
+    ctx.fillText('Press ESC to resume', this.canvas.width / 2, this.canvas.height / 2 + 40);
+  },
+
+  drawGameOverOverlay: function () {
+    const ctx = this.ctx;
+
+    ctx.fillStyle = 'rgba(10, 10, 30, 0.85)';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 48px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2 - 80);
+
+    // Team name
+    ctx.fillStyle = '#aabbcc';
+    ctx.font = '20px system-ui, sans-serif';
+    ctx.fillText(`Team: ${this.teamName}`, this.canvas.width / 2, this.canvas.height / 2 - 40);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 32px system-ui, sans-serif';
+    ctx.fillText(`Score: ${this.state.score.toLocaleString()}`, this.canvas.width / 2, this.canvas.height / 2 + 10);
+
+    if (this.state.score === this.state.highScore && this.state.score > 0) {
+      ctx.fillStyle = '#ffcc00';
+      ctx.font = 'bold 24px system-ui, sans-serif';
+      ctx.fillText('🏆 NEW HIGH SCORE! 🏆', this.canvas.width / 2, this.canvas.height / 2 + 50);
+    }
+
+    ctx.fillStyle = '#00d4ff';
+    ctx.font = '20px system-ui, sans-serif';
+    ctx.fillText('Click to play again', this.canvas.width / 2, this.canvas.height / 2 + 100);
+  },
+
+  // Blazor interop notifications
+  notifyScoreUpdate: function () {
+    if (this.dotNetHelper) {
+      this.dotNetHelper.invokeMethodAsync('OnScoreUpdate', this.state.score, this.state.multiplier);
+    }
+  },
+
+  notifyPhaseChange: function () {
+    if (this.dotNetHelper) {
+      this.dotNetHelper.invokeMethodAsync('OnPhaseChange', this.state.phase);
+    }
+  },
+
+  notifyGameOver: function () {
+    if (this.dotNetHelper) {
+      this.dotNetHelper.invokeMethodAsync('OnGameOver', this.state.score, this.state.highScore);
+    }
+  },
+
+  // Clean up
+  stop: function () {
+    this.state.running = false;
+    if (this.gameLoop) {
+      cancelAnimationFrame(this.gameLoop);
+      this.gameLoop = null;
+    }
+  },
+
+  dispose: function () {
+    this.stop();
+    window.removeEventListener('resize', this.resizeCanvas);
+  }
+};
+
+// Blazor interop functions
+window.gameInterop = {
+  init: function (canvasId, dotNetHelper, teamName, isTestMode) {
+    return GameEngine.init(canvasId, dotNetHelper, teamName, isTestMode);
+  },
+
+  start: function () {
+    GameEngine.start();
+  },
+
+  stop: function () {
+    GameEngine.stop();
+  },
+
+  restart: function () {
+    GameEngine.start();
+  },
+
+  getScore: function () {
+    return GameEngine.state.score;
+  },
+
+  getHighScore: function () {
+    return GameEngine.state.highScore;
+  },
+
+  getGameState: function () {
+    return {
+      running: GameEngine.state.running,
+      paused: GameEngine.state.paused,
+      gameOver: GameEngine.state.gameOver,
+      score: GameEngine.state.score,
+      multiplier: GameEngine.state.multiplier,
+      phase: GameEngine.state.phase
+    };
+  },
+
+  // Movement control for Arduino devices
+  moveLeft: function (isMoving) {
+    if (!GameEngine.state.running || GameEngine.state.gameOver) return false;
+    GameEngine.rocket.movingLeft = isMoving;
+    return true;
+  },
+
+  moveRight: function (isMoving) {
+    if (!GameEngine.state.running || GameEngine.state.gameOver) return false;
+    GameEngine.rocket.movingRight = isMoving;
+    return true;
+  },
+
+  // Pulse movement (single frame push)
+  pulseLeft: function () {
+    if (!GameEngine.state.running || GameEngine.state.gameOver) return false;
+    GameEngine.rocket.x -= GameEngine.rocket.speed;
+    GameEngine.rocket.x = Math.max(0, GameEngine.rocket.x);
+    return true;
+  },
+
+  pulseRight: function () {
+    if (!GameEngine.state.running || GameEngine.state.gameOver) return false;
+    GameEngine.rocket.x += GameEngine.rocket.speed;
+    GameEngine.rocket.x = Math.min(GameEngine.canvas.width - GameEngine.rocket.width, GameEngine.rocket.x);
+    return true;
+  },
+
+  dispose: function () {
+    GameEngine.dispose();
+  }
+};
+
+// Handle click for restart
+document.addEventListener('click', (e) => {
+  if (GameEngine.state.gameOver && GameEngine.canvas && GameEngine.canvas.contains(e.target)) {
+    GameEngine.start();
+  }
+});

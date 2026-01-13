@@ -1,0 +1,263 @@
+.game-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #0a0a1a;
+  display: flex;
+  overflow: hidden;
+}
+
+.game-sidebar {
+  width: 200px;
+  min-width: 200px;
+  height: 100%;
+  background: linear-gradient(180deg, #0d0d2b 0%, #1a1a3a 50%, #0d0d2b 100%);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1rem;
+  box-sizing: border-box;
+}
+
+.left-sidebar {
+  border-right: 2px solid rgba(100, 200, 255, 0.3);
+  border-left: none;
+}
+
+.right-sidebar {
+  border-left: 2px solid rgba(100, 200, 255, 0.3);
+  border-right: none;
+}
+
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  height: 100%;
+}
+
+.game-container {
+  flex: 1;
+  height: 100%;
+  background: #87CEEB;
+  overflow: hidden;
+  position: relative;
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Escape Button */
+.btn-escape {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #aabbcc;
+  background: rgba(255, 100, 100, 0.1);
+  border: 1px solid rgba(255, 100, 100, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-escape:hover {
+  color: #ffffff;
+  background: rgba(255, 100, 100, 0.2);
+  border-color: rgba(255, 100, 100, 0.5);
+}
+
+.btn-escape .key-hint {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #ff6666;
+  background: rgba(255, 100, 100, 0.15);
+  border: 1px solid rgba(255, 100, 100, 0.3);
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+/* Team Display */
+.team-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: rgba(100, 200, 255, 0.05);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 8px;
+}
+
+.team-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #667788;
+  text-transform: uppercase;
+}
+
+.team-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #00d4ff;
+  word-break: break-word;
+}
+
+/* Score Panel */
+.score-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: rgba(100, 200, 255, 0.05);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 8px;
+}
+
+.score-section,
+.multiplier-section,
+.highscore-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.score-label,
+.multiplier-label,
+.highscore-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #667788;
+  text-transform: uppercase;
+}
+
+.score-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'Courier New', monospace;
+}
+
+.multiplier-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ffcc00;
+  font-family: 'Courier New', monospace;
+}
+
+.highscore-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #88aacc;
+  font-family: 'Courier New', monospace;
+}
+
+/* Phase Display */
+.phase-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(100, 200, 255, 0.05);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 8px;
+  margin-top: auto;
+}
+
+.phase-icon {
+  font-size: 1.5rem;
+}
+
+.phase-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #88cc88;
+}
+
+/* Device Status */
+.device-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: rgba(100, 200, 255, 0.05);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 8px;
+}
+
+.status-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #667788;
+  text-transform: uppercase;
+}
+
+.controller-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.controller {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.controller.connected {
+  color: #44ff88;
+  background: rgba(68, 255, 136, 0.1);
+  border: 1px solid rgba(68, 255, 136, 0.3);
+}
+
+.controller.disconnected {
+  color: #888888;
+  background: rgba(136, 136, 136, 0.1);
+  border: 1px solid rgba(136, 136, 136, 0.2);
+}
+
+/* Mode Display */
+.mode-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: rgba(100, 200, 255, 0.05);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 8px;
+}
+
+.mode-display .mode-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #667788;
+  text-transform: uppercase;
+}
+
+.mode-display .mode-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mode-display .mode-value.test {
+  color: #ffcc44;
+}
+
+.mode-display .mode-value.controller {
+  color: #44ccff;
+}

@@ -1,0 +1,67 @@
+# Build results
+bin/
+obj/
+out/
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+*.sln.iml
+
+# Visual Studio
+.vs/
+*.csproj.user
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+appsettings.*.local.json
+
+# Publish output
+publish/
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# Test results
+TestResults/
+*.trx
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+*appsettings.json

@@ -1,0 +1,235 @@
+@page "/game"
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ass_di_stroid_frontend.Services.GameQueueService GameQueue
+@implements IAsyncDisposable
+
+<PageTitle>Asteroid Escape - Playing</PageTitle>
+
+<div class="game-wrapper">
+  <div class="game-sidebar left-sidebar">
+    <div class="sidebar-content">
+      <button class="btn-escape" @onclick="GoHome">
+        <span class="key-hint">ESC</span>
+        <span>Exit Game</span>
+      </button>
+
+      <div class="team-display">
+        <span class="team-label">TEAM</span>
+        <span class="team-name">@teamName</span>
+      </div>
+
+      <div class="mode-display">
+        <span class="mode-label">MODE</span>
+        <span class="mode-value @(isTestMode ? "test" : "controller")">
+          @(isTestMode ? "⌨️ Test Mode" : "🎮 Controller")
+        </span>
+      </div>
+
+      @if (!isTestMode)
+      {
+        <div class="device-status">
+          <span class="status-label">CONTROLLERS</span>
+          <div class="controller-status">
+            <span class="controller @(leftConnected ? "connected" : "disconnected")">
+              ◀ LEFT @(leftConnected ? "✓" : "○")
+            </span>
+            <span class="controller @(rightConnected ? "connected" : "disconnected")">
+              RIGHT ▶ @(rightConnected ? "✓" : "○")
+            </span>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+
+  <div class="game-container" @ref="gameContainer">
+    <canvas id="gameCanvas" @ref="canvasElement"></canvas>
+  </div>
+
+  <div class="game-sidebar right-sidebar">
+    <div class="sidebar-content">
+      <div class="score-panel">
+        <div class="score-section">
+          <span class="score-label">SCORE</span>
+          <span class="score-value">@currentScore.ToString("N0")</span>
+        </div>
+        <div class="multiplier-section">
+          <span class="multiplier-label">MULTIPLIER</span>
+          <span class="multiplier-value">x@currentMultiplier.ToString("F1")</span>
+        </div>
+        <div class="highscore-section">
+          <span class="highscore-label">BEST</span>
+          <span class="highscore-value">@highScore.ToString("N0")</span>
+        </div>
+      </div>
+
+      <div class="phase-display">
+        <span class="phase-icon">@(currentPhase == "earth" ? "🌍" : "🌌")</span>
+        <span class="phase-text">@(currentPhase == "earth" ? "Atmosphere" : "Space")</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+@code {
+  [SupplyParameterFromQuery(Name = "team")]
+  public string? TeamNameParam { get; set; }
+
+  [SupplyParameterFromQuery(Name = "mode")]
+  public string? ModeParam { get; set; }
+
+  private ElementReference gameContainer;
+  private ElementReference canvasElement;
+  private DotNetObjectReference<Game>? dotNetRef;
+  private bool initialized = false;
+  private Timer? deviceCheckTimer;
+
+  private string teamName = "Unknown";
+  private bool isTestMode = true;
+  private int currentScore = 0;
+  private double currentMultiplier = 1.0;
+  private int highScore = 0;
+  private string currentPhase = "earth";
+
+  // Device connection status
+  private bool leftConnected = false;
+  private bool rightConnected = false;
+
+  protected override void OnInitialized()
+  {
+    if (!string.IsNullOrWhiteSpace(TeamNameParam))
+    {
+      teamName = Uri.UnescapeDataString(TeamNameParam);
+    }
+
+    // Determine control mode
+    isTestMode = ModeParam != "controller";
+
+    // Set team name in queue service
+    GameQueue.TeamName = teamName;
+
+    // Subscribe to movement events from Arduino devices (only needed in controller mode)
+    if (!isTestMode)
+    {
+      GameQueue.OnMovementChanged += HandleMovementChanged;
+    }
+
+    // Start timer to check device connections
+    deviceCheckTimer = new Timer(CheckDeviceConnections, null, 0, 1000);
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      dotNetRef = DotNetObjectReference.Create(this);
+
+      // Wait for canvas to be ready
+      await Task.Delay(100);
+
+      // Initialize and start the game with team name and mode
+      var success = await JS.InvokeAsync<bool>("gameInterop.init", "gameCanvas", dotNetRef, teamName, isTestMode);
+      if (success)
+      {
+        initialized = true;
+        highScore = await JS.InvokeAsync<int>("gameInterop.getHighScore");
+
+        // Update game state to playing
+        GameQueue.UpdateGameState(ass_di_stroid_frontend.Services.GameState.Playing);
+
+        await JS.InvokeVoidAsync("gameInterop.start");
+        StateHasChanged();
+      }
+    }
+  }
+
+  private async void HandleMovementChanged(ass_di_stroid_frontend.Services.DeviceDirection direction, bool isMoving)
+  {
+    if (!initialized) return;
+
+    try
+    {
+      if (direction == ass_di_stroid_frontend.Services.DeviceDirection.Left)
+      {
+        await JS.InvokeVoidAsync("gameInterop.moveLeft", isMoving);
+      }
+      else
+      {
+        await JS.InvokeVoidAsync("gameInterop.moveRight", isMoving);
+      }
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"Movement error: {ex.Message}");
+    }
+  }
+
+  private void CheckDeviceConnections(object? state)
+  {
+    var devices = GameQueue.GetConnectedDevices();
+    var newLeftConnected = devices.Any(d => d.Direction == ass_di_stroid_frontend.Services.DeviceDirection.Left);
+    var newRightConnected = devices.Any(d => d.Direction == ass_di_stroid_frontend.Services.DeviceDirection.Right);
+
+    if (newLeftConnected != leftConnected || newRightConnected != rightConnected)
+    {
+      leftConnected = newLeftConnected;
+      rightConnected = newRightConnected;
+      InvokeAsync(StateHasChanged);
+    }
+  }
+
+  [JSInvokable]
+  public void OnScoreUpdate(int score, double multiplier)
+  {
+    currentScore = score;
+    currentMultiplier = multiplier;
+
+    // Update queue service with current game state
+    GameQueue.UpdateScore(score, multiplier, currentPhase);
+
+    StateHasChanged();
+  }
+
+  [JSInvokable]
+  public void OnPhaseChange(string phase)
+  {
+    currentPhase = phase;
+    GameQueue.UpdateScore(currentScore, currentMultiplier, phase);
+    StateHasChanged();
+  }
+
+  [JSInvokable]
+  public void OnGameOver(int score, int newHighScore)
+  {
+    currentScore = score;
+    highScore = newHighScore;
+    GameQueue.UpdateGameState(ass_di_stroid_frontend.Services.GameState.GameOver);
+    StateHasChanged();
+  }
+
+  private async Task GoHome()
+  {
+    if (initialized)
+    {
+      await JS.InvokeVoidAsync("gameInterop.stop");
+    }
+
+    // Reset queue when leaving game
+    GameQueue.ResetQueue();
+    Navigation.NavigateTo("/");
+  }
+
+  public async ValueTask DisposeAsync()
+  {
+    // Unsubscribe from events
+    GameQueue.OnMovementChanged -= HandleMovementChanged;
+    deviceCheckTimer?.Dispose();
+
+    if (initialized)
+    {
+      await JS.InvokeVoidAsync("gameInterop.dispose");
+    }
+    dotNetRef?.Dispose();
+  }
+}

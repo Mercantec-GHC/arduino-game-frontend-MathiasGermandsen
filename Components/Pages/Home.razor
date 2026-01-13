@@ -1,0 +1,176 @@
+﻿@page "/"
+@inject NavigationManager Navigation
+@inject ass_di_stroid_frontend.Services.GameQueueService GameQueue
+@implements IDisposable
+
+<PageTitle>Asteroid Escape</PageTitle>
+
+<div class="start-screen">
+  <div class="stars"></div>
+  <div class="stars2"></div>
+  <div class="stars3"></div>
+
+  <div class="content">
+    <div class="title-container">
+      <h1 class="game-title">
+        <span class="title-line">ASTEROID</span>
+        <span class="title-line accent">ESCAPE</span>
+      </h1>
+      <p class="tagline">Survive the skies. Conquer the cosmos.</p>
+    </div>
+
+    <div class="rocket-preview">
+      <div class="rocket">
+        <div class="rocket-body">
+          <div class="window"></div>
+        </div>
+        <div class="fins"></div>
+        <div class="exhaust">
+          <div class="flame"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="menu-container">
+      <div class="team-input-container">
+        <label for="teamName">TEAM NAME</label>
+        <input type="text" id="teamName" @bind="teamName" @bind:event="oninput" placeholder="Enter your team name"
+          maxlength="20" />
+      </div>
+
+      <!-- Control Mode Selector -->
+      <div class="mode-selector">
+        <span class="mode-label">CONTROL MODE</span>
+        <div class="mode-buttons">
+          <button class="mode-btn @(controlMode == "test" ? "active" : "")" @onclick='() => SetMode("test")'>
+            <span class="mode-icon">⌨️</span>
+            <span class="mode-text">Test Mode</span>
+            <span class="mode-hint">A/D Keys</span>
+          </button>
+          <button class="mode-btn @(controlMode == "controller" ? "active" : "")"
+            @onclick='() => SetMode("controller")'>
+            <span class="mode-icon">🎮</span>
+            <span class="mode-text">Controller</span>
+            <span class="mode-hint">Arduino MKR</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Queue Status (only visible in controller mode) -->
+      @if (controlMode == "controller")
+      {
+        <div class="queue-status">
+          <span class="queue-label">CONTROLLER QUEUE</span>
+          <div class="queue-devices">
+            <div class="queue-device @(leftConnected ? "connected" : "waiting")">
+              <span class="device-direction">◀ LEFT</span>
+              <span class="device-status">@(leftConnected ? (leftDeviceName ?? "Connected") : "Waiting...")</span>
+            </div>
+            <div class="queue-device @(rightConnected ? "connected" : "waiting")">
+              <span class="device-direction">RIGHT ▶</span>
+              <span class="device-status">@(rightConnected ? (rightDeviceName ?? "Connected") : "Waiting...")</span>
+            </div>
+          </div>
+          <p class="queue-hint">POST to <code>/api/joinqueue</code> with
+            <code>{`{ "deviceId": "...", "deviceName": "..." }`}</code></p>
+        </div>
+      }
+
+      <button class="btn-start" @onclick="StartGame" disabled="@(!CanStartGame)">
+        <span class="btn-text">LAUNCH</span>
+        <span class="btn-icon">🚀</span>
+      </button>
+
+      @if (controlMode == "test")
+      {
+        <div class="controls-info">
+          <h3>CONTROLS</h3>
+          <div class="keys">
+            <div class="key">
+              <span class="key-cap">A</span>
+              <span class="key-label">LEFT</span>
+            </div>
+            <div class="key">
+              <span class="key-cap">D</span>
+              <span class="key-label">RIGHT</span>
+            </div>
+          </div>
+        </div>
+      }
+
+      <div class="game-info">
+        <div class="info-card">
+          <span class="info-icon">🐦</span>
+          <span class="info-text">Dodge birds in the atmosphere</span>
+        </div>
+        <div class="info-card">
+          <span class="info-icon">☄️</span>
+          <span class="info-text">Avoid asteroids in space</span>
+        </div>
+        <div class="info-card">
+          <span class="info-icon">⏱️</span>
+          <span class="info-text">+100 points/sec (x0.3 every 10k)</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="version">v0.2 — Arduino MKR WiFi 1010 Ready</p>
+  </div>
+</div>
+
+@code {
+  private string teamName = string.Empty;
+  private string controlMode = "test";
+  private bool leftConnected = false;
+  private bool rightConnected = false;
+  private string? leftDeviceName = null;
+  private string? rightDeviceName = null;
+  private Timer? queueCheckTimer;
+
+  private bool CanStartGame => !string.IsNullOrWhiteSpace(teamName) &&
+  (controlMode == "test" || (leftConnected && rightConnected));
+
+  protected override void OnInitialized()
+  {
+    queueCheckTimer = new Timer(CheckQueueStatus, null, 0, 1000);
+  }
+
+  private void SetMode(string mode)
+  {
+    controlMode = mode;
+    if (mode == "test") GameQueue.ResetQueue();
+  }
+
+  private void CheckQueueStatus(object? state)
+  {
+    var devices = GameQueue.GetConnectedDevices();
+    var leftDevice = devices.FirstOrDefault(d => d.Direction == ass_di_stroid_frontend.Services.DeviceDirection.Left);
+    var rightDevice = devices.FirstOrDefault(d => d.Direction == ass_di_stroid_frontend.Services.DeviceDirection.Right);
+
+    var newLeft = leftDevice != null;
+    var newRight = rightDevice != null;
+    var newLeftName = leftDevice?.DeviceName ?? leftDevice?.DeviceId;
+    var newRightName = rightDevice?.DeviceName ?? rightDevice?.DeviceId;
+
+    if (newLeft != leftConnected || newRight != rightConnected ||
+    newLeftName != leftDeviceName || newRightName != rightDeviceName)
+    {
+      leftConnected = newLeft;
+      rightConnected = newRight;
+      leftDeviceName = newLeftName;
+      rightDeviceName = newRightName;
+      InvokeAsync(StateHasChanged);
+    }
+  }
+
+  private void StartGame()
+  {
+    if (!string.IsNullOrWhiteSpace(teamName))
+    {
+      var encodedTeamName = Uri.EscapeDataString(teamName.Trim());
+      Navigation.NavigateTo($"/game?team={encodedTeamName}&mode={controlMode}");
+    }
+  }
+
+  public void Dispose() => queueCheckTimer?.Dispose();
+}
