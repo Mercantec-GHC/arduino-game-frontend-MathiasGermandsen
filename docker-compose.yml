@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   ass-di-stroid-frontend:
-    image: ass-di-stroid-frontend:latest
+    image: assdistroidfrontend:latest
     build:
       context: .
       dockerfile: Dockerfile
