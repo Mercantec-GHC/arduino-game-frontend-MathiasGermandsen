@@ -60,8 +60,7 @@ Register a device to the game queue.
 **Request Body:**
 ```json
 {
-  "deviceId": "arduino-001",
-  "deviceName": "Left Controller"
+  "deviceId": "arduino-001"
 }
 ```
 
@@ -69,23 +68,10 @@ Register a device to the game queue.
 ```json
 {
   "success": true,
-  "deviceId": "arduino-001",
-  "deviceName": "Left Controller",
   "direction": "left",
-  "message": "Joined as Left",
-  "gameState": {
-    "state": "waiting",
-    "leftConnected": true,
-    "rightConnected": false,
-    "playersReady": 1,
-    "score": 0,
-    "multiplier": 1.0
-  }
+  "state": "inQueue"
 }
 ```
-
-#### GET `/api/joinqueue/{deviceId}`
-Simple join without a custom name. The device ID will be used as the display name.
 
 ---
 
@@ -93,21 +79,15 @@ Simple join without a custom name. The device ID will be used as the display nam
 
 Keep your device connection alive. Must be called at least every 10 seconds.
 
-#### GET/POST `/api/heartbeat/{deviceId}`
+#### POST `/api/heartbeat/{deviceId}`
 
 **Response:**
 ```json
 {
   "success": true,
-  "deviceId": "arduino-001",
-  "gameState": {
-    "state": "playing",
-    "leftConnected": true,
-    "rightConnected": true,
-    "playersReady": 2,
-    "score": 15000,
-    "multiplier": 1.3
-  }
+  "state": "inQueue",
+  "score": 0,
+  "multiplier": 1.3
 }
 ```
 
@@ -117,14 +97,11 @@ Keep your device connection alive. Must be called at least every 10 seconds.
 
 Control your side of the spaceship.
 
-#### GET/POST `/api/move/{deviceId}?action=start`
+#### POST `/api/move/{deviceId}?action=start`
 Start moving in your assigned direction.
 
-#### GET/POST `/api/move/{deviceId}?action=stop`
+#### POST `/api/move/{deviceId}?action=stop`
 Stop moving.
-
-#### GET/POST `/api/stop/{deviceId}`
-Shorthand to stop moving.
 
 **Response:**
 ```json
@@ -133,65 +110,6 @@ Shorthand to stop moving.
   "deviceId": "arduino-001",
   "action": "start",
   "message": "Moving left"
-}
-```
-
----
-
-### Game State
-
-Get the current game state.
-
-#### GET `/api/gamestate`
-
-**Response:**
-```json
-{
-  "state": "playing",
-  "leftConnected": true,
-  "rightConnected": true,
-  "playersReady": 2,
-  "score": 25000,
-  "multiplier": 1.6,
-  "phase": "space",
-  "teamName": "Team Alpha"
-}
-```
-
-**Game States:**
-- `waiting` - Waiting for players to join
-- `ready` - Both players connected, ready to start
-- `playing` - Game in progress
-- `gameover` - Game ended
-
----
-
-### Connected Devices
-
-List all connected devices.
-
-#### GET `/api/devices`
-
-**Response:**
-```json
-{
-  "count": 2,
-  "devices": [
-    {
-      "deviceId": "arduino-001",
-      "deviceName": "Left Controller",
-      "direction": "left",
-      "lastHeartbeat": "2026-01-13T10:30:00Z",
-      "isConnected": true
-    },
-    {
-      "deviceId": "arduino-002",
-      "deviceName": "Right Controller",
-      "direction": "right",
-      "lastHeartbeat": "2026-01-13T10:30:00Z",
-      "isConnected": true
-    }
-  ]
 }
 ```
 
@@ -302,7 +220,11 @@ void joinQueue() {
 
 void sendHeartbeat() {
   String url = "/api/heartbeat/" + String(deviceId);
-  client.get(url);
+  
+  client.beginRequest();
+  client.post(url);
+  client.sendHeader("Content-Length", 0);
+  client.endRequest();
   
   int statusCode = client.responseStatusCode();
   client.responseBody();  // Clear response buffer
@@ -318,7 +240,11 @@ void startMoving() {
   isMoving = true;
   
   String url = "/api/move/" + String(deviceId) + "?action=start";
-  client.get(url);
+  
+  client.beginRequest();
+  client.post(url);
+  client.sendHeader("Content-Length", 0);
+  client.endRequest();
   client.responseBody();
   
   Serial.println("Started moving");
@@ -328,8 +254,12 @@ void stopMoving() {
   if (!isMoving) return;
   isMoving = false;
   
-  String url = "/api/stop/" + String(deviceId);
-  client.get(url);
+  String url = "/api/move/" + String(deviceId) + "?action=stop";
+  
+  client.beginRequest();
+  client.post(url);
+  client.sendHeader("Content-Length", 0);
+  client.endRequest();
   client.responseBody();
   
   Serial.println("Stopped moving");
