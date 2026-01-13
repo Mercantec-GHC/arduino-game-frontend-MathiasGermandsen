@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  ass-di-stroid-frontend:
+    image: ass-di-stroid-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "13000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    networks:
+      - frontend-network
+
+networks:
+  frontend-network:
+    driver: overlay
