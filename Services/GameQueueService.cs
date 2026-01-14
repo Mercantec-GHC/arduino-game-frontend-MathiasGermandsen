@@ -17,7 +17,6 @@ public enum DeviceDirection
 public class ConnectedDevice
 {
   public string DeviceId { get; set; } = string.Empty;
-  public string? DeviceName { get; set; }
   public DeviceDirection Direction { get; set; }
   public DateTime LastHeartbeat { get; set; }
   public bool IsConnected => (DateTime.UtcNow - LastHeartbeat).TotalSeconds < 10;

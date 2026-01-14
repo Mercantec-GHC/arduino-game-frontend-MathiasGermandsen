@@ -54,16 +54,19 @@ public class GameController : ControllerBase
   }
 
   [HttpPost("move")]
-  public IActionResult Move([FromBody] DeviceIdBody request)
+  public IActionResult Move([FromBody] MoveRequest request)
   {
     if (request == null || string.IsNullOrWhiteSpace(request.DeviceId))
     {
       return BadRequest(new { success = false, message = "Device ID is required" });
     }
 
+    var (success, message) = _queueService.Move(request.DeviceId, request.IsMoving);
+
     return Ok(new
     {
-      success = true,
+      success,
+      message,
       deviceId = request.DeviceId
     });
   }
@@ -72,5 +75,11 @@ public class GameController : ControllerBase
 public class DeviceIdBody
 {
   public string DeviceId { get; set; } = string.Empty;
+}
+
+public class MoveRequest
+{
+  public string DeviceId { get; set; } = string.Empty;
+  public bool IsMoving { get; set; }
 }
 
