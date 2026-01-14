@@ -15,7 +15,7 @@ public class GameController : ControllerBase
   }
 
   [HttpPost("joinqueue")]
-  public IActionResult JoinQueuePost([FromBody] JoinQueueRequest request)
+  public IActionResult JoinQueuePost([FromBody] DeviceIdBody request)
   {
     if (request == null || string.IsNullOrWhiteSpace(request.DeviceId))
     {
@@ -32,15 +32,15 @@ public class GameController : ControllerBase
     });
   }
 
-  [HttpPost("heartbeat/{deviceId}")]
-  public IActionResult Heartbeat(string deviceId)
+  [HttpPost("heartbeat")]
+  public IActionResult Heartbeat([FromBody] DeviceIdBody request)
   {
-    if (string.IsNullOrWhiteSpace(deviceId))
+    if (request == null || string.IsNullOrWhiteSpace(request.DeviceId))
     {
       return BadRequest(new { success = false, message = "Device ID is required" });
     }
 
-    var (success, _) = _queueService.Heartbeat(deviceId);
+    var (success, _) = _queueService.Heartbeat(request.DeviceId);
 
     return Ok(new
     {
@@ -51,28 +51,24 @@ public class GameController : ControllerBase
     });
   }
 
-  [HttpPost("move/{deviceId}")]
-  public IActionResult Move(string deviceId, [FromQuery] string action = "start")
+  [HttpPost("move")]
+  public IActionResult Move([FromBody] DeviceIdBody request)
   {
-    if (string.IsNullOrWhiteSpace(deviceId))
+    if (request == null || string.IsNullOrWhiteSpace(request.DeviceId))
     {
       return BadRequest(new { success = false, message = "Device ID is required" });
     }
 
-    var isMoving = action.ToLower() != "stop";
-    var (success, message) = _queueService.Move(deviceId, isMoving);
-
     return Ok(new
     {
-      success,
-      deviceId,
-      action = isMoving ? "start" : "stop",
-      message
+      success = true,
+      deviceId = request.DeviceId
     });
   }
 }
 
-public class JoinQueueRequest
+public class DeviceIdBody
 {
   public string DeviceId { get; set; } = string.Empty;
 }
+
