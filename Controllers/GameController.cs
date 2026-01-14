@@ -22,7 +22,7 @@ public class GameController : ControllerBase
       return BadRequest(new { success = false, message = "Device ID is required" });
     }
 
-    var (success, direction, _) = _queueService.JoinQueue(request.DeviceId, request.DeviceName);
+    var (success, direction, _) = _queueService.JoinQueue(request.DeviceId);
 
     return Ok(new
     {
