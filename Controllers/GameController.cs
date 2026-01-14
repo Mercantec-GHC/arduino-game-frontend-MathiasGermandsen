@@ -40,14 +40,16 @@ public class GameController : ControllerBase
       return BadRequest(new { success = false, message = "Device ID is required" });
     }
 
-    var (success, _) = _queueService.Heartbeat(request.DeviceId);
+    var (success, stateInfo) = _queueService.Heartbeat(request.DeviceId);
 
     return Ok(new
     {
       success,
-      state = "inQueue",
-      score = 0,
-      multiplier = 1.3
+      state = stateInfo.State,
+      score = stateInfo.Score,
+      multiplier = stateInfo.Multiplier,
+      phase = stateInfo.Phase,
+      teamName = stateInfo.TeamName
     });
   }
 

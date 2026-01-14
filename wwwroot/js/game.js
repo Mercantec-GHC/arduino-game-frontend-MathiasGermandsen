@@ -97,9 +97,9 @@ const GameEngine = {
     this.canvas.width = this.canvas.offsetWidth;
     this.canvas.height = this.canvas.offsetHeight;
 
-    // Reposition rocket
+    // Reposition rocket (100px gap from bottom for better visibility)
     this.rocket.x = this.canvas.width / 2 - this.rocket.width / 2;
-    this.rocket.y = this.canvas.height - this.rocket.height - 30;
+    this.rocket.y = this.canvas.height - this.rocket.height - 100;
 
     // Reinitialize clouds for new size
     this.initClouds();

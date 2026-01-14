@@ -261,3 +261,101 @@
 .mode-display .mode-value.controller {
   color: #44ccff;
 }
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1400px) {
+  .game-sidebar {
+    width: 160px;
+    min-width: 160px;
+    padding: 1rem 0.75rem;
+  }
+
+  .sidebar-content {
+    gap: 1.5rem;
+  }
+
+  .btn-escape {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .team-display,
+  .mode-display,
+  .device-status,
+  .score-display,
+  .high-score-display {
+    padding: 0.75rem;
+  }
+
+  .score-value,
+  .high-score-value {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 1200px) {
+  .game-sidebar {
+    width: 140px;
+    min-width: 140px;
+    padding: 0.75rem 0.5rem;
+  }
+
+  .sidebar-content {
+    gap: 1rem;
+  }
+
+  .btn-escape {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-escape .key-hint {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.6rem;
+  }
+
+  .team-display,
+  .mode-display,
+  .device-status,
+  .score-display,
+  .high-score-display {
+    padding: 0.5rem;
+  }
+
+  .team-label,
+  .mode-label,
+  .status-label,
+  .score-label,
+  .high-score-label {
+    font-size: 0.6rem;
+  }
+
+  .team-name {
+    font-size: 0.85rem;
+  }
+
+  .score-value,
+  .high-score-value {
+    font-size: 1.25rem;
+  }
+
+  .multiplier {
+    font-size: 0.7rem;
+  }
+
+  .controller {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  .game-sidebar {
+    width: 120px;
+    min-width: 120px;
+  }
+
+  .score-value,
+  .high-score-value {
+    font-size: 1.1rem;
+  }
+}

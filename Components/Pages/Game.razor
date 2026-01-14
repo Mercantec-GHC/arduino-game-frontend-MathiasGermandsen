@@ -4,7 +4,7 @@
 @inject ass_di_stroid_frontend.Services.GameQueueService GameQueue
 @implements IAsyncDisposable
 
-<PageTitle>Asteroid Escape - Playing</PageTitle>
+<PageTitle>AssDiStroid The Escape - Playing</PageTitle>
 
 <div class="game-wrapper">
   <div class="game-sidebar left-sidebar">
@@ -228,7 +228,14 @@
 
     if (initialized)
     {
-      await JS.InvokeVoidAsync("gameInterop.dispose");
+      try
+      {
+        await JS.InvokeVoidAsync("gameInterop.dispose");
+      }
+      catch (JSDisconnectedException)
+      {
+        // Circuit already disconnected, safe to ignore
+      }
     }
     dotNetRef?.Dispose();
   }

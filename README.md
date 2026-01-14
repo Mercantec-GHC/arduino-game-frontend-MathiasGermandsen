@@ -1,4 +1,4 @@
-# Ass-Di-Stroid 🚀
+# AssDiStroid The Escape 🚀
 
 A co-op asteroid escape game built with Blazor Server, featuring both keyboard controls and Arduino MKR WiFi 1010 controller support.
 
