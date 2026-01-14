@@ -1,5 +1,6 @@
 using ass_di_stroid_frontend.Components;
 using ass_di_stroid_frontend.Services;
+using ass_di_stroid_frontend.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,14 +14,17 @@ builder.Services.AddControllers();
 // Add GameQueueService as singleton (shared across all requests)
 builder.Services.AddSingleton<GameQueueService>();
 
+// Add HttpClient and HighScoreService
+builder.Services.AddHttpClient<IHighScoreService, HighScoreService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
+  app.UseExceptionHandler("/Error", createScopeForErrors: true);
+  // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+  app.UseHsts();
 }
 
 app.UseHttpsRedirection();

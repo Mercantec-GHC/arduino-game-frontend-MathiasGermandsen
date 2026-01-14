@@ -115,7 +115,7 @@
       </div>
     </div>
 
-    <p class="version">v0.2 — Arduino MKR WiFi 1010 Ready</p>
+    <p class="version">v0.8 - Nearly complete!</p>
   </div>
 </div>
 
@@ -150,8 +150,8 @@
 
     var newLeft = leftDevice != null;
     var newRight = rightDevice != null;
-    var newLeftName = leftDevice?.DeviceName ?? leftDevice?.DeviceId;
-    var newRightName = rightDevice?.DeviceName ?? rightDevice?.DeviceId;
+    var newLeftName = leftDevice?.DeviceId;
+    var newRightName = rightDevice?.DeviceId;
 
     if (newLeft != leftConnected || newRight != rightConnected ||
     newLeftName != leftDeviceName || newRightName != rightDeviceName)

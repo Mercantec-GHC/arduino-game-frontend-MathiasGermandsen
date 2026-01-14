@@ -47,7 +47,7 @@ public class GameQueueService
     set { lock (_lock) _teamName = value; }
   }
 
-  public (bool success, DeviceDirection? direction, string message) JoinQueue(string deviceId, string? deviceName = null)
+  public (bool success, DeviceDirection? direction, string message) JoinQueue(string deviceId)
   {
     lock (_lock)
     {
@@ -56,11 +56,6 @@ public class GameQueueService
       {
         var existingDevice = _devices[deviceId];
         existingDevice.LastHeartbeat = DateTime.UtcNow;
-        // Update device name if provided
-        if (!string.IsNullOrWhiteSpace(deviceName))
-        {
-          existingDevice.DeviceName = deviceName;
-        }
         return (true, existingDevice.Direction, $"Already joined as {existingDevice.Direction}");
       }
 
@@ -81,7 +76,6 @@ public class GameQueueService
       var newDevice = new ConnectedDevice
       {
         DeviceId = deviceId,
-        DeviceName = deviceName ?? deviceId, // Use deviceId as fallback name
         Direction = direction,
         LastHeartbeat = DateTime.UtcNow
       };
@@ -171,6 +165,19 @@ public class GameQueueService
       _currentScore = score;
       _currentMultiplier = multiplier;
       _currentPhase = phase;
+    }
+  }
+
+  public void ClearMovementStates()
+  {
+    lock (_lock)
+    {
+      // Force all devices to stop moving
+      // This clears any "stuck" button states when restarting the game
+      foreach (var device in _devices.Values)
+      {
+        OnMovementChanged?.Invoke(device.Direction, false);
+      }
     }
   }
 

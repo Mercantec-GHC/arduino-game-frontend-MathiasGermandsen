@@ -11,6 +11,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
+      - HighScoreApi__BaseUrl=${HIGHSCORE_API_BASEURL}
     deploy:
       mode: replicated
       replicas: 1

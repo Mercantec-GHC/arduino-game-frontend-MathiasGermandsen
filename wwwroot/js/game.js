@@ -19,10 +19,12 @@ const GameEngine = {
     displayScore: 0, // For smooth score animation
     multiplier: 1.0,
     highScore: parseInt(localStorage.getItem('asteroidEscapeHighScore') || '0'),
-    phase: 'earth', // 'earth' or 'space'
+    phase: 'earth', // 'earth', 'space', or 'mars'
     phaseTransitionScore: 10000, // Score to start transitioning to space
     phaseTransitionComplete: 20000, // Score where fully in space
-    transitionProgress: 0, // 0 = full earth, 1 = full space
+    marsTransitionScore: 30000, // Score to start transitioning to Mars
+    marsTransitionComplete: 40000, // Score where fully on Mars
+    transitionProgress: 0, // 0 = full current phase, 1 = full next phase
     lastScoreTime: 0,
     scoreInterval: 1000, // 1 second for 100 points
     pointsPerInterval: 100,
@@ -39,15 +41,17 @@ const GameEngine = {
     speed: 8,
     movingLeft: false,
     movingRight: false,
+    tiltAngle: 0, // Current tilt in radians
+    targetTiltAngle: 0, // Target tilt for smooth animation
   },
 
   // Obstacles
   obstacles: [],
-  obstacleSpawnRate: 1500, // milliseconds
+  obstacleSpawnRate: 1000, // milliseconds (reduced from 1500 for more challenge)
   lastObstacleSpawn: 0,
-  minObstacleSpawnRate: 500,
+  minObstacleSpawnRate: 300, // milliseconds (reduced from 500 for more challenge)
 
-  // Visual settings - Sky to Space transition
+  // Visual settings - Sky to Space to Mars transition
   colors: {
     sky: {
       top: '#87CEEB',    // Light sky blue
@@ -58,6 +62,11 @@ const GameEngine = {
       top: '#0a0a1a',
       middle: '#0d0d2b',
       bottom: '#050510',
+    },
+    mars: {
+      top: '#8B2500',    // Dark rusty red
+      middle: '#CD4F39', // Mars orange-red
+      bottom: '#FF6347', // Tomato red
     }
   },
 
@@ -166,6 +175,12 @@ const GameEngine = {
     this.state.running = true;
     this.state.lastScoreTime = performance.now();
     this.lastObstacleSpawn = performance.now();
+
+    // Notify Blazor about game restart to reset Arduino states
+    if (this.dotNetHelper) {
+      this.dotNetHelper.invokeMethodAsync('OnGameRestart');
+    }
+
     this.gameLoop = requestAnimationFrame((t) => this.update(t));
   },
 
@@ -212,19 +227,31 @@ const GameEngine = {
         this.notifyScoreUpdate();
 
         // Calculate phase transition progress (0 to 1)
-        if (this.state.score >= this.state.phaseTransitionScore) {
+        if (this.state.score >= this.state.marsTransitionScore && this.state.phase === 'space') {
+          // Transition from Space to Mars (30k-40k)
+          const transitionRange = this.state.marsTransitionComplete - this.state.marsTransitionScore;
+          this.state.transitionProgress = Math.min(1,
+            (this.state.score - this.state.marsTransitionScore) / transitionRange);
+
+          if (this.state.transitionProgress >= 1) {
+            this.state.phase = 'mars';
+            this.notifyPhaseChange();
+          }
+        } else if (this.state.score >= this.state.phaseTransitionScore && this.state.phase === 'earth') {
+          // Transition from Earth to Space (10k-20k)
           const transitionRange = this.state.phaseTransitionComplete - this.state.phaseTransitionScore;
           this.state.transitionProgress = Math.min(1,
             (this.state.score - this.state.phaseTransitionScore) / transitionRange);
 
-          if (this.state.transitionProgress >= 1 && this.state.phase === 'earth') {
+          if (this.state.transitionProgress >= 1) {
             this.state.phase = 'space';
+            this.state.transitionProgress = 0; // Reset for next transition
             this.notifyPhaseChange();
           }
         }
 
-        // Increase difficulty based on score
-        this.obstacleSpawnRate = Math.max(this.minObstacleSpawnRate, 1500 - (this.state.score / 100));
+        // Increase difficulty based on score (faster spawn rate)
+        this.obstacleSpawnRate = Math.max(this.minObstacleSpawnRate, 1000 - (this.state.score / 150));
       }
 
       // Smooth score display animation
@@ -261,6 +288,7 @@ const GameEngine = {
   },
 
   updateRocket: function () {
+    // Update position
     if (this.rocket.movingLeft) {
       this.rocket.x -= this.rocket.speed;
     }
@@ -270,6 +298,20 @@ const GameEngine = {
 
     // Keep rocket in bounds
     this.rocket.x = Math.max(0, Math.min(this.canvas.width - this.rocket.width, this.rocket.x));
+
+    // Update tilt animation (15 degrees = 0.262 radians)
+    const maxTilt = 0.262; // 15 degrees in radians
+    if (this.rocket.movingLeft && !this.rocket.movingRight) {
+      this.rocket.targetTiltAngle = -maxTilt; // Tilt left
+    } else if (this.rocket.movingRight && !this.rocket.movingLeft) {
+      this.rocket.targetTiltAngle = maxTilt; // Tilt right
+    } else {
+      this.rocket.targetTiltAngle = 0; // Return to center
+    }
+
+    // Smooth tilt interpolation (lerp)
+    const tiltSpeed = 0.15;
+    this.rocket.tiltAngle += (this.rocket.targetTiltAngle - this.rocket.tiltAngle) * tiltSpeed;
   },
 
   updateClouds: function () {
@@ -285,26 +327,41 @@ const GameEngine = {
   },
 
   spawnObstacle: function () {
-    // Mix obstacles based on transition progress
+    // Mix obstacles based on current phase and transition progress
     const inTransition = this.state.transitionProgress > 0 && this.state.transitionProgress < 1;
     let types;
 
-    if (this.state.phase === 'space' || this.state.transitionProgress >= 1) {
-      types = ['asteroid', 'asteroid', 'satellite'];
-    } else if (inTransition) {
-      // During transition, mix both types
-      const spaceChance = this.state.transitionProgress;
-      if (Math.random() < spaceChance) {
-        types = ['asteroid', 'asteroid', 'satellite'];
+    if (this.state.phase === 'mars' || (this.state.phase === 'space' && this.state.score >= this.state.marsTransitionScore)) {
+      // Mars phase: dust storms, mars rocks, alien plants
+      if (inTransition && this.state.phase === 'space') {
+        const marsChance = this.state.transitionProgress;
+        if (Math.random() < marsChance) {
+          types = ['duststorm', 'marsrock', 'marsrock', 'alienplant'];
+        } else {
+          types = ['asteroid', 'asteroid', 'satellite'];
+        }
       } else {
-        types = ['bird', 'bird', 'bird'];
+        types = ['duststorm', 'marsrock', 'marsrock', 'alienplant'];
+      }
+    } else if (this.state.phase === 'space' || (this.state.phase === 'earth' && this.state.score >= this.state.phaseTransitionScore)) {
+      // Space phase: asteroids and satellites
+      if (inTransition && this.state.phase === 'earth') {
+        const spaceChance = this.state.transitionProgress;
+        if (Math.random() < spaceChance) {
+          types = ['asteroid', 'asteroid', 'satellite'];
+        } else {
+          types = ['bird', 'bird', 'bird'];
+        }
+      } else {
+        types = ['asteroid', 'asteroid', 'satellite'];
       }
     } else {
+      // Earth phase: birds
       types = ['bird', 'bird', 'bird'];
     }
 
     const type = types[Math.floor(Math.random() * types.length)];
-    const size = type === 'satellite' ? 50 : (30 + Math.random() * 30);
+    const size = type === 'satellite' ? 50 : type === 'duststorm' ? (60 + Math.random() * 40) : (30 + Math.random() * 30);
 
     this.obstacles.push({
       x: Math.random() * (this.canvas.width - size),
@@ -316,6 +373,23 @@ const GameEngine = {
       rotation: 0,
       rotationSpeed: (Math.random() - 0.5) * 0.1,
     });
+
+    // Multi-spawn logic: 15% chance to spawn a second obstacle simultaneously for more challenge
+    if (Math.random() < 0.15 && this.state.score > 5000) {
+      const secondType = types[Math.floor(Math.random() * types.length)];
+      const secondSize = secondType === 'satellite' ? 50 : secondType === 'duststorm' ? (60 + Math.random() * 40) : (30 + Math.random() * 30);
+
+      this.obstacles.push({
+        x: Math.random() * (this.canvas.width - secondSize),
+        y: -secondSize - 100, // Slightly higher to avoid overlap
+        width: secondSize,
+        height: secondSize,
+        speed: 3 + Math.random() * 3 + (this.state.score / 1000),
+        type: secondType,
+        rotation: 0,
+        rotationSpeed: (Math.random() - 0.5) * 0.1,
+      });
+    }
   },
 
   updateObstacles: function () {
@@ -375,12 +449,12 @@ const GameEngine = {
     // Draw background with sky-to-space transition
     this.drawBackground(timestamp);
 
-    // Draw clouds (fade out as we go to space)
-    if (this.state.transitionProgress < 1) {
+    // Draw clouds (only during Earth phase and Earth-to-Space transition)
+    if (this.state.phase === 'earth') {
       this.drawClouds();
     }
 
-    // Draw stars (fade in as we go to space)
+    // Draw stars (visible in Space and Mars phases)
     this.drawStars(timestamp);
 
     // Draw obstacles
@@ -422,25 +496,55 @@ const GameEngine = {
   },
 
   drawBackground: function (timestamp) {
-    const t = this.state.transitionProgress;
+    const ctx = this.ctx;
+    let topColor, midColor, botColor;
 
-    // Interpolate between sky and space colors
-    const topColor = this.lerpColor(this.colors.sky.top, this.colors.space.top, t);
-    const midColor = this.lerpColor(this.colors.sky.middle, this.colors.space.middle, t);
-    const botColor = this.lerpColor(this.colors.sky.bottom, this.colors.space.bottom, t);
+    // Determine which phase transition we're in
+    if (this.state.phase === 'mars') {
+      // Fully in Mars
+      topColor = this.colors.mars.top;
+      midColor = this.colors.mars.middle;
+      botColor = this.colors.mars.bottom;
+    } else if (this.state.phase === 'space' && this.state.score >= this.state.marsTransitionScore) {
+      // Transitioning from Space to Mars
+      const t = this.state.transitionProgress;
+      topColor = this.lerpColor(this.colors.space.top, this.colors.mars.top, t);
+      midColor = this.lerpColor(this.colors.space.middle, this.colors.mars.middle, t);
+      botColor = this.lerpColor(this.colors.space.bottom, this.colors.mars.bottom, t);
+    } else if (this.state.phase === 'space') {
+      // Fully in Space
+      topColor = this.colors.space.top;
+      midColor = this.colors.space.middle;
+      botColor = this.colors.space.bottom;
+    } else if (this.state.phase === 'earth' && this.state.score >= this.state.phaseTransitionScore) {
+      // Transitioning from Earth to Space
+      const t = this.state.transitionProgress;
+      topColor = this.lerpColor(this.colors.sky.top, this.colors.space.top, t);
+      midColor = this.lerpColor(this.colors.sky.middle, this.colors.space.middle, t);
+      botColor = this.lerpColor(this.colors.sky.bottom, this.colors.space.bottom, t);
+    } else {
+      // Fully in Earth
+      topColor = this.colors.sky.top;
+      midColor = this.colors.sky.middle;
+      botColor = this.colors.sky.bottom;
+    }
 
-    const gradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+    const gradient = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
     gradient.addColorStop(0, topColor);
     gradient.addColorStop(0.5, midColor);
     gradient.addColorStop(1, botColor);
 
-    this.ctx.fillStyle = gradient;
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   },
 
   drawClouds: function () {
     const ctx = this.ctx;
-    const cloudOpacity = 1 - this.state.transitionProgress;
+    // Fade out clouds during Earth-to-Space transition
+    let cloudOpacity = 1;
+    if (this.state.phase === 'earth' && this.state.score >= this.state.phaseTransitionScore) {
+      cloudOpacity = 1 - this.state.transitionProgress;
+    }
 
     for (const cloud of this.clouds) {
       ctx.save();
@@ -478,12 +582,21 @@ const GameEngine = {
 
   drawStars: function (timestamp) {
     const ctx = this.ctx;
-    // Stars fade in as we transition to space
-    const starOpacity = this.state.transitionProgress;
+    // Calculate star opacity based on phase
+    let effectiveOpacity;
 
-    // Also show some faint stars even in sky (like high altitude)
-    const baseOpacity = 0.1;
-    const effectiveOpacity = baseOpacity + (1 - baseOpacity) * starOpacity;
+    if (this.state.phase === 'earth') {
+      // During Earth phase: fade in during transition
+      const baseOpacity = 0.1; // Faint stars even in sky (high altitude)
+      if (this.state.score >= this.state.phaseTransitionScore) {
+        effectiveOpacity = baseOpacity + (1 - baseOpacity) * this.state.transitionProgress;
+      } else {
+        effectiveOpacity = baseOpacity;
+      }
+    } else {
+      // During Space or Mars: fully visible
+      effectiveOpacity = 1.0;
+    }
 
     for (const star of this.stars) {
       const twinkle = Math.sin(timestamp * star.twinkleSpeed + star.twinklePhase) * 0.3 + 0.7;
@@ -503,6 +616,7 @@ const GameEngine = {
 
     ctx.save();
     ctx.translate(r.x + r.width / 2, r.y + r.height / 2);
+    ctx.rotate(this.rocket.tiltAngle); // Apply tilt rotation
 
     // Rocket body
     ctx.fillStyle = '#e8e8e8';
@@ -578,6 +692,12 @@ const GameEngine = {
         this.drawAsteroid(ctx, obs.width);
       } else if (obs.type === 'satellite') {
         this.drawSatellite(ctx, obs.width);
+      } else if (obs.type === 'duststorm') {
+        this.drawDustStorm(ctx, obs.width);
+      } else if (obs.type === 'marsrock') {
+        this.drawMarsRock(ctx, obs.width);
+      } else if (obs.type === 'alienplant') {
+        this.drawAlienPlant(ctx, obs.width);
       }
 
       ctx.restore();
@@ -699,6 +819,114 @@ const GameEngine = {
     ctx.fillStyle = '#ff4444';
     ctx.beginPath();
     ctx.arc(0, -s * 0.7, s * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawDustStorm: function (ctx, size) {
+    const s = size / 2;
+
+    // Semi-transparent swirling dust cloud
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, s);
+    gradient.addColorStop(0, 'rgba(205, 92, 57, 0.6)'); // Orange-red center
+    gradient.addColorStop(0.5, 'rgba(139, 69, 19, 0.4)'); // Brown middle
+    gradient.addColorStop(1, 'rgba(139, 69, 19, 0.1)'); // Faded edge
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s, s * 0.8, Math.PI / 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dust particles
+    ctx.fillStyle = 'rgba(160, 82, 45, 0.5)';
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI * 2 * i) / 8;
+      const dist = s * 0.6;
+      const x = Math.cos(angle) * dist;
+      const y = Math.sin(angle) * dist;
+      ctx.beginPath();
+      ctx.arc(x, y, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+
+  drawMarsRock: function (ctx, size) {
+    const s = size / 2;
+
+    // Irregular Mars rock shape (reddish-brown)
+    ctx.fillStyle = '#8B4513'; // Saddle brown
+    ctx.beginPath();
+    ctx.moveTo(s * 0.7, 0);
+    ctx.lineTo(s * 0.5, s * 0.8);
+    ctx.lineTo(-s * 0.2, s * 0.9);
+    ctx.lineTo(-s * 0.8, s * 0.4);
+    ctx.lineTo(-s * 0.9, -s * 0.3);
+    ctx.lineTo(-s * 0.3, -s * 0.9);
+    ctx.lineTo(s * 0.4, -s * 0.7);
+    ctx.closePath();
+    ctx.fill();
+
+    // Iron oxide spots (red)
+    ctx.fillStyle = '#A0522D';
+    ctx.beginPath();
+    ctx.arc(-s * 0.3, s * 0.2, s * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(s * 0.2, -s * 0.3, s * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight
+    ctx.fillStyle = 'rgba(205, 133, 63, 0.4)';
+    ctx.beginPath();
+    ctx.arc(-s * 0.5, -s * 0.5, s * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dark shadow
+    ctx.fillStyle = 'rgba(50, 25, 10, 0.3)';
+    ctx.beginPath();
+    ctx.arc(s * 0.3, s * 0.4, s * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawAlienPlant: function (ctx, size) {
+    const s = size / 2;
+
+    // Central stalk (green-blue alien plant)
+    ctx.fillStyle = '#2E8B57'; // Sea green
+    ctx.fillRect(-s * 0.1, -s * 0.5, s * 0.2, s);
+
+    // Bulbous base
+    ctx.fillStyle = '#3CB371'; // Medium sea green
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.3, s * 0.3, s * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Alien tendrils/leaves
+    ctx.strokeStyle = '#20B2AA'; // Light sea green
+    ctx.lineWidth = s * 0.08;
+    ctx.lineCap = 'round';
+
+    // Left tendril
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.1, 0);
+    ctx.quadraticCurveTo(-s * 0.6, -s * 0.3, -s * 0.7, -s * 0.6);
+    ctx.stroke();
+
+    // Right tendril
+    ctx.beginPath();
+    ctx.moveTo(s * 0.1, 0);
+    ctx.quadraticCurveTo(s * 0.6, -s * 0.4, s * 0.7, -s * 0.7);
+    ctx.stroke();
+
+    // Glowing spots (bioluminescent)
+    ctx.fillStyle = '#7FFF00'; // Chartreuse glow
+    ctx.beginPath();
+    ctx.arc(0, s * 0.3, s * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(-s * 0.5, -s * 0.4, s * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(s * 0.5, -s * 0.5, s * 0.08, 0, Math.PI * 2);
     ctx.fill();
   },
 
