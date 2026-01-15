@@ -163,6 +163,103 @@
   font-family: 'Courier New', monospace;
 }
 
+/* Next To Beat - Subway Surfers Style */
+.next-to-beat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(255, 165, 0, 0.15) 0%, rgba(255, 100, 50, 0.1) 100%);
+  border: 2px solid rgba(255, 165, 0, 0.4);
+  border-radius: 10px;
+  text-align: center;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.next-to-beat.passed {
+  background: linear-gradient(135deg, rgba(100, 255, 100, 0.2) 0%, rgba(50, 200, 50, 0.15) 100%);
+  border-color: rgba(100, 255, 100, 0.5);
+  animation: celebrate 0.5s ease-out;
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 5px rgba(255, 165, 0, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 15px rgba(255, 165, 0, 0.5);
+  }
+}
+
+@keyframes celebrate {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.next-to-beat-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.next-icon {
+  font-size: 1.1rem;
+}
+
+.next-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #ffaa44;
+  letter-spacing: 0.5px;
+}
+
+.next-to-beat.passed .next-label {
+  color: #66ff66;
+}
+
+.next-team-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.next-score {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #ffcc00;
+  font-family: 'Courier New', monospace;
+}
+
+.next-to-beat.passed .next-score {
+  color: #88ff88;
+  text-decoration: line-through;
+}
+
+.score-diff {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #aabbcc;
+}
+
+.next-to-beat.passed .score-diff {
+  display: none;
+}
+
 /* Phase Display */
 .phase-display {
   display: flex;
@@ -183,6 +280,70 @@
   font-size: 0.9rem;
   font-weight: 600;
   color: #88cc88;
+}
+
+/* Power-ups Display */
+.powerups-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 100, 255, 0.1) 100%);
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  border-radius: 8px;
+  animation: powerup-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes powerup-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+  }
+}
+
+.powerups-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #ffcc44;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.powerup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.powerup-icon {
+  font-size: 1.2rem;
+}
+
+.powerup-name {
+  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.powerup-timer {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #ffcc00;
+  font-family: 'Courier New', monospace;
+  background: rgba(255, 204, 0, 0.2);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
 }
 
 /* Device Status */

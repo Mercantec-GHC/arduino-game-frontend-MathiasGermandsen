@@ -4,9 +4,16 @@ using ass_di_stroid_frontend.Api.Models;
 
 namespace ass_di_stroid_frontend.Api.Services;
 
+public class NextTeamInfo
+{
+  public string TeamName { get; set; } = string.Empty;
+  public int Score { get; set; }
+}
+
 public interface IHighScoreService
 {
   Task<bool> SubmitScoreAsync(string teamName, int score);
+  Task<NextTeamInfo?> GetNextTeamAsync(int currentScore);
 }
 
 public class HighScoreService : IHighScoreService
@@ -47,6 +54,38 @@ public class HighScoreService : IHighScoreService
     {
       _logger.LogError(ex, "Error submitting score for team {TeamName} with score {Score}", teamName, score);
       return false;
+    }
+  }
+
+  public async Task<NextTeamInfo?> GetNextTeamAsync(int currentScore)
+  {
+    try
+    {
+      var url = $"{_apiBaseUrl}/api/TeamScore/get-next-team?current_score={currentScore}";
+      var response = await _httpClient.GetAsync(url);
+
+      if (response.IsSuccessStatusCode)
+      {
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        return new NextTeamInfo
+        {
+          TeamName = root.GetProperty("team_name").GetString() ?? "Unknown",
+          Score = root.GetProperty("score").GetInt32()
+        };
+      }
+      else
+      {
+        _logger.LogWarning("Failed to get next team. Status code: {StatusCode}", response.StatusCode);
+        return null;
+      }
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Error getting next team for score {Score}", currentScore);
+      return null;
     }
   }
 }

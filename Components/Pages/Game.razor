@@ -65,11 +65,39 @@
         </div>
       </div>
 
+      @if (nextTeamToBeat != null)
+      {
+        <div class="next-to-beat @(currentScore >= nextTeamToBeat.Score ? "passed" : "")">
+          <div class="next-to-beat-header">
+            <span class="next-icon">🎯</span>
+            <span class="next-label">@(currentScore >= nextTeamToBeat.Score ? "PASSED!" : "NEXT TO BEAT")</span>
+          </div>
+          <div class="next-team-name">@nextTeamToBeat.TeamName</div>
+          <div class="next-score">@nextTeamToBeat.Score.ToString("N0")</div>
+          <div class="score-diff">@((nextTeamToBeat.Score - currentScore).ToString("N0")) to go</div>
+        </div>
+      }
+
       <div class="phase-display">
         <span class="phase-icon">@(currentPhase == "earth" ? "🌍" : currentPhase == "mars" ? "🔴" : "🌌")</span>
         <span class="phase-text">@(currentPhase == "earth" ? "Atmosphere" : currentPhase == "mars" ? "Mars" :
                     "Space")</span>
       </div>
+
+      @if (activePowerUps.Any())
+      {
+        <div class="powerups-display">
+          <span class="powerups-label">ACTIVE POWER-UPS</span>
+          @foreach (var powerUp in activePowerUps)
+          {
+            <div class="powerup-item">
+              <span class="powerup-icon">@GetPowerUpIcon(powerUp.Type)</span>
+              <span class="powerup-name">@GetPowerUpName(powerUp.Type)</span>
+              <span class="powerup-timer">@((powerUp.TimeRemaining / 10.0).ToString("F1"))s</span>
+            </div>
+          }
+        </div>
+      }
     </div>
   </div>
 </div>
@@ -94,9 +122,23 @@
   private int highScore = 0;
   private string currentPhase = "earth";
 
+  // Next team to beat (Subway Surfers style)
+  private ass_di_stroid_frontend.Api.Services.NextTeamInfo? nextTeamToBeat = null;
+  private int lastFetchedScore = 0;
+
   // Device connection status
   private bool leftConnected = false;
   private bool rightConnected = false;
+
+  // Active power-ups
+  private List<PowerUpInfo> activePowerUps = new();
+  private Timer? powerUpTimer;
+
+  private class PowerUpInfo
+  {
+    public string Type { get; set; } = "";
+    public int TimeRemaining { get; set; }
+  }
 
   protected override void OnInitialized()
   {
@@ -119,6 +161,9 @@
 
     // Start timer to check device connections
     deviceCheckTimer = new Timer(CheckDeviceConnections, null, 0, 1000);
+
+    // Start timer to update power-up timers
+    powerUpTimer = new Timer(UpdatePowerUpTimers, null, 0, 100);
   }
 
   protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -136,6 +181,9 @@
       {
         initialized = true;
         highScore = await JS.InvokeAsync<int>("gameInterop.getHighScore");
+
+        // Fetch initial next team to beat
+        _ = FetchNextTeamToBeatAsync(0);
 
         // Update game state to playing
         GameQueue.UpdateGameState(ass_di_stroid_frontend.Services.GameState.Playing);
@@ -190,7 +238,28 @@
     // Update queue service with current game state
     GameQueue.UpdateScore(score, multiplier, currentPhase);
 
+    // Fetch next team to beat when score increases significantly or when we pass the current target
+    bool shouldFetch = (nextTeamToBeat == null) ||
+    (score >= nextTeamToBeat.Score) ||
+    (score - lastFetchedScore >= 2000);
+
+    if (shouldFetch)
+    {
+      _ = FetchNextTeamToBeatAsync(score);
+    }
+
     StateHasChanged();
+  }
+
+  private async Task FetchNextTeamToBeatAsync(int score)
+  {
+    lastFetchedScore = score;
+    var nextTeam = await HighScoreService.GetNextTeamAsync(score);
+    if (nextTeam != null)
+    {
+      nextTeamToBeat = nextTeam;
+      await InvokeAsync(StateHasChanged);
+    }
   }
 
   [JSInvokable]
@@ -202,10 +271,84 @@
   }
 
   [JSInvokable]
+  public void OnPowerUpCollected(string type, int duration)
+  {
+    var existingPowerUp = activePowerUps.FirstOrDefault(p => p.Type == type);
+    if (existingPowerUp != null)
+    {
+      // Reset timer if already active (duration is in ms, convert to deciseconds)
+      existingPowerUp.TimeRemaining = duration / 100;
+    }
+    else
+    {
+      // Add new power-up (duration is in ms, convert to deciseconds)
+      activePowerUps.Add(new PowerUpInfo
+      {
+        Type = type,
+        TimeRemaining = duration / 100
+      });
+    }
+    StateHasChanged();
+  }
+
+  private void UpdatePowerUpTimers(object? state)
+  {
+    if (!activePowerUps.Any()) return;
+
+    bool changed = false;
+    for (int i = activePowerUps.Count - 1; i >= 0; i--)
+    {
+      activePowerUps[i].TimeRemaining--; // Decrement (timer runs every 100ms, we store in deciseconds)
+      if (activePowerUps[i].TimeRemaining <= 0)
+      {
+        activePowerUps.RemoveAt(i);
+        changed = true;
+      }
+    }
+
+    if (changed || activePowerUps.Any())
+    {
+      InvokeAsync(StateHasChanged);
+    }
+  }
+
+  private string GetPowerUpIcon(string type)
+  {
+    return type switch
+    {
+      "shield" => "🛡️",
+      "nuclearThrust" => "⚡",
+      "scoreBoost" => "⭐",
+      "slowMotion" => "🕐",
+      _ => "❓"
+    };
+  }
+
+  private string GetPowerUpName(string type)
+  {
+    return type switch
+    {
+      "shield" => "Shield",
+      "nuclearThrust" => "Nuclear Thrust",
+      "scoreBoost" => "Score Boost",
+      "slowMotion" => "Slow Motion",
+      _ => "Unknown"
+    };
+  }
+
+  [JSInvokable]
   public void OnGameRestart()
   {
     // Update game state to playing FIRST so Arduino heartbeats get correct state immediately
     GameQueue.UpdateGameState(ass_di_stroid_frontend.Services.GameState.Playing);
+
+    // Reset next team to beat tracking
+    nextTeamToBeat = null;
+    lastFetchedScore = 0;
+    _ = FetchNextTeamToBeatAsync(0);
+
+    // Reset power-ups
+    activePowerUps.Clear();
 
     // Reset Arduino movement states when game restarts
     // This ensures no "stuck" button states from previous game
@@ -252,6 +395,7 @@
     // Unsubscribe from events
     GameQueue.OnMovementChanged -= HandleMovementChanged;
     deviceCheckTimer?.Dispose();
+    powerUpTimer?.Dispose();
 
     if (initialized)
     {

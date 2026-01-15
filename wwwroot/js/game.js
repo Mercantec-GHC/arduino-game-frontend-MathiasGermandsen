@@ -26,8 +26,8 @@ const GameEngine = {
     marsTransitionComplete: 40000, // Score where fully on Mars
     transitionProgress: 0, // 0 = full current phase, 1 = full next phase
     lastScoreTime: 0,
-    scoreInterval: 1000, // 1 second for 100 points
-    pointsPerInterval: 100,
+    scoreInterval: 100, // 100ms for smooth rolling score (10 points per tick = 100 per second)
+    pointsPerInterval: 10, // 10 points every 100ms = 100 points per second
     multiplierThreshold: 10000, // Every 10000 points
     multiplierFactor: 0.3, // Multiply by this amount
   },
@@ -47,9 +47,20 @@ const GameEngine = {
 
   // Obstacles
   obstacles: [],
-  obstacleSpawnRate: 1000, // milliseconds (reduced from 1500 for more challenge)
+  obstacleSpawnRate: 600, // milliseconds - spawn more frequently
   lastObstacleSpawn: 0,
-  minObstacleSpawnRate: 300, // milliseconds (reduced from 500 for more challenge)
+  minObstacleSpawnRate: 150, // milliseconds - minimum spawn rate at high scores
+
+  // Power-ups
+  powerUps: [],
+  powerUpSpawnRate: 8000, // milliseconds - spawn every 8 seconds
+  lastPowerUpSpawn: 0,
+  activePowerUps: {
+    shield: { active: false, endTime: 0, duration: 5000 },
+    nuclearThrust: { active: false, endTime: 0, duration: 4000 },
+    scoreBoost: { active: false, endTime: 0, duration: 6000, multiplier: 3 },
+    slowMotion: { active: false, endTime: 0, duration: 5000 }
+  },
 
   // Visual settings - Sky to Space to Mars transition
   colors: {
@@ -197,10 +208,16 @@ const GameEngine = {
     this.state.phase = 'earth';
     this.state.transitionProgress = 0;
     this.obstacles = [];
-    this.obstacleSpawnRate = 1500;
+    this.powerUps = [];
+    this.obstacleSpawnRate = 600;
     this.rocket.x = this.canvas.width / 2 - this.rocket.width / 2;
     this.rocket.movingLeft = false;
     this.rocket.movingRight = false;
+    // Reset active power-ups
+    for (const key in this.activePowerUps) {
+      this.activePowerUps[key].active = false;
+      this.activePowerUps[key].endTime = 0;
+    }
     this.initClouds();
   },
 
@@ -219,7 +236,12 @@ const GameEngine = {
     if (!this.state.paused && !this.state.gameOver) {
       // Update score (100 points every second, affected by multiplier)
       if (timestamp - this.state.lastScoreTime >= this.state.scoreInterval) {
-        const pointsToAdd = Math.floor(this.state.pointsPerInterval * this.state.multiplier);
+        // Apply score boost power-up
+        const scoreMultiplier = this.activePowerUps.scoreBoost.active
+          ? this.activePowerUps.scoreBoost.multiplier
+          : 1.0;
+
+        const pointsToAdd = Math.floor(this.state.pointsPerInterval * this.state.multiplier * scoreMultiplier);
         this.state.score += pointsToAdd;
         this.state.lastScoreTime = timestamp;
 
@@ -255,7 +277,7 @@ const GameEngine = {
         }
 
         // Increase difficulty based on score (faster spawn rate)
-        this.obstacleSpawnRate = Math.max(this.minObstacleSpawnRate, 1000 - (this.state.score / 150));
+        this.obstacleSpawnRate = Math.max(this.minObstacleSpawnRate, 600 - (this.state.score / 200));
       }
 
       // Smooth score display animation
@@ -268,6 +290,15 @@ const GameEngine = {
 
       // Update clouds
       this.updateClouds();
+
+      // Update power-ups
+      this.updatePowerUps(timestamp);
+
+      // Spawn power-ups
+      if (timestamp - this.lastPowerUpSpawn >= this.powerUpSpawnRate) {
+        this.spawnPowerUp();
+        this.lastPowerUpSpawn = timestamp;
+      }
 
       // Spawn obstacles
       if (timestamp - this.lastObstacleSpawn >= this.obstacleSpawnRate) {
@@ -292,12 +323,17 @@ const GameEngine = {
   },
 
   updateRocket: function () {
+    // Apply nuclear thrust speed boost
+    const currentSpeed = this.activePowerUps.nuclearThrust.active
+      ? this.rocket.speed * 2.5
+      : this.rocket.speed;
+
     // Update position
     if (this.rocket.movingLeft) {
-      this.rocket.x -= this.rocket.speed;
+      this.rocket.x -= currentSpeed;
     }
     if (this.rocket.movingRight) {
-      this.rocket.x += this.rocket.speed;
+      this.rocket.x += currentSpeed;
     }
 
     // Keep rocket in bounds
@@ -365,7 +401,7 @@ const GameEngine = {
     }
 
     const type = types[Math.floor(Math.random() * types.length)];
-    const size = type === 'satellite' ? 50 : type === 'duststorm' ? (60 + Math.random() * 40) : (30 + Math.random() * 30);
+    const size = type === 'satellite' ? 70 : type === 'duststorm' ? (80 + Math.random() * 50) : (50 + Math.random() * 40);
 
     this.obstacles.push({
       x: Math.random() * (this.canvas.width - size),
@@ -378,10 +414,10 @@ const GameEngine = {
       rotationSpeed: (Math.random() - 0.5) * 0.1,
     });
 
-    // Multi-spawn logic: 15% chance to spawn a second obstacle simultaneously for more challenge
-    if (Math.random() < 0.15 && this.state.score > 5000) {
+    // Multi-spawn logic: 25% chance to spawn a second obstacle simultaneously for more challenge
+    if (Math.random() < 0.25 && this.state.score > 3000) {
       const secondType = types[Math.floor(Math.random() * types.length)];
-      const secondSize = secondType === 'satellite' ? 50 : secondType === 'duststorm' ? (60 + Math.random() * 40) : (30 + Math.random() * 30);
+      const secondSize = secondType === 'satellite' ? 70 : secondType === 'duststorm' ? (80 + Math.random() * 50) : (50 + Math.random() * 40);
 
       this.obstacles.push({
         x: Math.random() * (this.canvas.width - secondSize),
@@ -397,10 +433,95 @@ const GameEngine = {
   },
 
   updateObstacles: function () {
+    // Apply slow motion power-up
+    const speedMultiplier = this.activePowerUps.slowMotion.active ? 0.4 : 1.0;
+
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const obs = this.obstacles[i];
-      obs.y += obs.speed;
-      obs.rotation += obs.rotationSpeed;
+      obs.y += obs.speed * speedMultiplier;
+      obs.rotation += obs.rotationSpeed * speedMultiplier;
+
+      // Remove off-screen obstacles
+      if (obs.y > this.canvas.height) {
+        this.obstacles.splice(i, 1);
+      }
+    }
+  },
+
+  spawnPowerUp: function () {
+    const types = ['shield', 'nuclearThrust', 'scoreBoost', 'slowMotion'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    const size = 40;
+
+    this.powerUps.push({
+      x: Math.random() * (this.canvas.width - size),
+      y: -size,
+      width: size,
+      height: size,
+      speed: 2,
+      type: type,
+      rotation: 0,
+      rotationSpeed: 0.05,
+      pulse: 0
+    });
+  },
+
+  updatePowerUps: function (timestamp) {
+    // Update power-up positions
+    for (let i = this.powerUps.length - 1; i >= 0; i--) {
+      const powerUp = this.powerUps[i];
+      powerUp.y += powerUp.speed;
+      powerUp.rotation += powerUp.rotationSpeed;
+      powerUp.pulse = Math.sin(timestamp * 0.005) * 0.2 + 1;
+
+      // Remove off-screen power-ups
+      if (powerUp.y > this.canvas.height) {
+        this.powerUps.splice(i, 1);
+        continue;
+      }
+
+      // Check collision with rocket
+      if (this.rectIntersects({
+        x: this.rocket.x,
+        y: this.rocket.y,
+        width: this.rocket.width,
+        height: this.rocket.height
+      }, powerUp)) {
+        this.activatePowerUp(powerUp.type, timestamp);
+        this.powerUps.splice(i, 1);
+      }
+    }
+
+    // Check if active power-ups have expired
+    for (const key in this.activePowerUps) {
+      const powerUp = this.activePowerUps[key];
+      if (powerUp.active && timestamp >= powerUp.endTime) {
+        powerUp.active = false;
+      }
+    }
+  },
+
+  activatePowerUp: function (type, timestamp) {
+    const powerUp = this.activePowerUps[type];
+    if (powerUp) {
+      powerUp.active = true;
+      powerUp.endTime = timestamp + powerUp.duration;
+
+      // Notify UI
+      if (this.dotNetHelper) {
+        this.dotNetHelper.invokeMethodAsync('OnPowerUpCollected', type, powerUp.duration);
+      }
+    }
+  },
+
+  updateObstacles: function () {
+    // Apply slow motion power-up
+    const speedMultiplier = this.activePowerUps.slowMotion.active ? 0.4 : 1.0;
+
+    for (let i = this.obstacles.length - 1; i >= 0; i--) {
+      const obs = this.obstacles[i];
+      obs.y += obs.speed * speedMultiplier;
+      obs.rotation += obs.rotationSpeed * speedMultiplier;
 
       // Remove off-screen obstacles
       if (obs.y > this.canvas.height) {
@@ -410,6 +531,11 @@ const GameEngine = {
   },
 
   checkCollisions: function () {
+    // Shield protects from collisions
+    if (this.activePowerUps.shield.active) {
+      return false;
+    }
+
     const rocketHitbox = {
       x: this.rocket.x + 5,
       y: this.rocket.y + 10,
@@ -460,6 +586,9 @@ const GameEngine = {
 
     // Draw stars (visible in Space and Mars phases)
     this.drawStars(timestamp);
+
+    // Draw power-ups
+    this.drawPowerUps();
 
     // Draw obstacles
     this.drawObstacles();
@@ -622,6 +751,23 @@ const GameEngine = {
     ctx.translate(r.x + r.width / 2, r.y + r.height / 2);
     ctx.rotate(this.rocket.tiltAngle); // Apply tilt rotation
 
+    // Draw shield if active
+    if (this.activePowerUps.shield.active) {
+      const shieldRadius = Math.max(r.width, r.height) * 0.8;
+      const shieldGradient = ctx.createRadialGradient(0, 0, shieldRadius * 0.6, 0, 0, shieldRadius);
+      shieldGradient.addColorStop(0, 'rgba(100, 200, 255, 0.1)');
+      shieldGradient.addColorStop(0.7, 'rgba(100, 200, 255, 0.4)');
+      shieldGradient.addColorStop(1, 'rgba(100, 200, 255, 0.8)');
+
+      ctx.beginPath();
+      ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+      ctx.fillStyle = shieldGradient;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(150, 220, 255, 0.8)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
     // Rocket body
     ctx.fillStyle = '#e8e8e8';
     ctx.beginPath();
@@ -661,22 +807,44 @@ const GameEngine = {
     ctx.closePath();
     ctx.fill();
 
-    // Exhaust flame
+    // Exhaust flame (nuclear thrust has enhanced flames)
     if (!this.state.gameOver) {
-      const flameHeight = 25 + Math.random() * 10;
+      const isNuclear = this.activePowerUps.nuclearThrust.active;
+      const flameHeight = isNuclear ? 45 + Math.random() * 15 : 25 + Math.random() * 10;
       const flameGradient = ctx.createLinearGradient(0, r.height / 2, 0, r.height / 2 + flameHeight);
-      flameGradient.addColorStop(0, '#ffff00');
-      flameGradient.addColorStop(0.4, '#ff8800');
-      flameGradient.addColorStop(0.7, '#ff4400');
-      flameGradient.addColorStop(1, 'transparent');
+
+      if (isNuclear) {
+        flameGradient.addColorStop(0, '#00ffff');  // Cyan core
+        flameGradient.addColorStop(0.3, '#0088ff'); // Blue
+        flameGradient.addColorStop(0.6, '#ff00ff'); // Magenta
+        flameGradient.addColorStop(1, 'transparent');
+      } else {
+        flameGradient.addColorStop(0, '#ffff00');
+        flameGradient.addColorStop(0.4, '#ff8800');
+        flameGradient.addColorStop(0.7, '#ff4400');
+        flameGradient.addColorStop(1, 'transparent');
+      }
 
       ctx.fillStyle = flameGradient;
       ctx.beginPath();
-      ctx.moveTo(-8, r.height / 2);
-      ctx.quadraticCurveTo(-10, r.height / 2 + flameHeight * 0.6, 0, r.height / 2 + flameHeight);
-      ctx.quadraticCurveTo(10, r.height / 2 + flameHeight * 0.6, 8, r.height / 2);
+      const flameWidth = isNuclear ? 12 : 8;
+      ctx.moveTo(-flameWidth, r.height / 2);
+      ctx.quadraticCurveTo(-flameWidth - 2, r.height / 2 + flameHeight * 0.6, 0, r.height / 2 + flameHeight);
+      ctx.quadraticCurveTo(flameWidth + 2, r.height / 2 + flameHeight * 0.6, flameWidth, r.height / 2);
       ctx.closePath();
       ctx.fill();
+
+      // Nuclear thrust particle trail
+      if (isNuclear) {
+        for (let i = 0; i < 3; i++) {
+          const particleY = r.height / 2 + 20 + Math.random() * 30;
+          const particleX = (Math.random() - 0.5) * 20;
+          ctx.fillStyle = `rgba(0, 255, 255, ${0.6 - i * 0.2})`;
+          ctx.beginPath();
+          ctx.arc(particleX, particleY, 3 + Math.random() * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
 
     ctx.restore();
@@ -932,6 +1100,151 @@ const GameEngine = {
     ctx.beginPath();
     ctx.arc(s * 0.5, -s * 0.5, s * 0.08, 0, Math.PI * 2);
     ctx.fill();
+  },
+
+  drawPowerUps: function () {
+    const ctx = this.ctx;
+
+    for (const powerUp of this.powerUps) {
+      ctx.save();
+      ctx.translate(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2);
+      ctx.rotate(powerUp.rotation);
+      ctx.scale(powerUp.pulse, powerUp.pulse);
+
+      // Draw based on power-up type
+      if (powerUp.type === 'shield') {
+        this.drawShieldPowerUp(ctx, powerUp.width / 2);
+      } else if (powerUp.type === 'nuclearThrust') {
+        this.drawNuclearThrustPowerUp(ctx, powerUp.width / 2);
+      } else if (powerUp.type === 'scoreBoost') {
+        this.drawScoreBoostPowerUp(ctx, powerUp.width / 2);
+      } else if (powerUp.type === 'slowMotion') {
+        this.drawSlowMotionPowerUp(ctx, powerUp.width / 2);
+      }
+
+      ctx.restore();
+    }
+  },
+
+  drawShieldPowerUp: function (ctx, size) {
+    // Shield icon - blue protective bubble
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    gradient.addColorStop(0, 'rgba(100, 200, 255, 0.8)');
+    gradient.addColorStop(0.7, 'rgba(100, 200, 255, 0.6)');
+    gradient.addColorStop(1, 'rgba(100, 200, 255, 0.3)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shield emblem
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.6);
+    ctx.lineTo(-size * 0.5, 0);
+    ctx.lineTo(-size * 0.3, size * 0.6);
+    ctx.lineTo(size * 0.3, size * 0.6);
+    ctx.lineTo(size * 0.5, 0);
+    ctx.closePath();
+    ctx.stroke();
+  },
+
+  drawNuclearThrustPowerUp: function (ctx, size) {
+    // Nuclear symbol - cyan/magenta energy
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    gradient.addColorStop(0, 'rgba(0, 255, 255, 0.9)');
+    gradient.addColorStop(0.5, 'rgba(255, 0, 255, 0.7)');
+    gradient.addColorStop(1, 'rgba(0, 100, 255, 0.4)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Lightning bolt
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(size * 0.2, -size * 0.6);
+    ctx.lineTo(-size * 0.3, size * 0.1);
+    ctx.lineTo(size * 0.1, size * 0.1);
+    ctx.lineTo(-size * 0.2, size * 0.6);
+    ctx.lineTo(size * 0.3, -size * 0.1);
+    ctx.lineTo(-size * 0.1, -size * 0.1);
+    ctx.closePath();
+    ctx.fill();
+  },
+
+  drawScoreBoostPowerUp: function (ctx, size) {
+    // Star with multiplier - golden yellow
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    gradient.addColorStop(0, 'rgba(255, 215, 0, 0.9)');
+    gradient.addColorStop(0.7, 'rgba(255, 165, 0, 0.7)');
+    gradient.addColorStop(1, 'rgba(255, 140, 0, 0.4)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Star shape
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+      const x = Math.cos(angle) * size * 0.5;
+      const y = Math.sin(angle) * size * 0.5;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+
+      const innerAngle = angle + Math.PI / 5;
+      const ix = Math.cos(innerAngle) * size * 0.2;
+      const iy = Math.sin(innerAngle) * size * 0.2;
+      ctx.lineTo(ix, iy);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // "x3" text
+    ctx.fillStyle = '#000';
+    ctx.font = `bold ${size * 0.5}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('×3', 0, 0);
+  },
+
+  drawSlowMotionPowerUp: function (ctx, size) {
+    // Clock icon - purple/blue
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    gradient.addColorStop(0, 'rgba(147, 112, 219, 0.9)');
+    gradient.addColorStop(0.7, 'rgba(138, 43, 226, 0.7)');
+    gradient.addColorStop(1, 'rgba(75, 0, 130, 0.4)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Clock face
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Clock hands
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -size * 0.4);
+    ctx.stroke();
+
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(size * 0.3, 0);
+    ctx.stroke();
   },
 
   drawPauseOverlay: function () {
