@@ -204,15 +204,15 @@
   [JSInvokable]
   public void OnGameRestart()
   {
+    // Update game state to playing FIRST so Arduino heartbeats get correct state immediately
+    GameQueue.UpdateGameState(ass_di_stroid_frontend.Services.GameState.Playing);
+
     // Reset Arduino movement states when game restarts
     // This ensures no "stuck" button states from previous game
     if (!isTestMode)
     {
       GameQueue.ClearMovementStates();
     }
-
-    // Update game state back to playing
-    GameQueue.UpdateGameState(ass_di_stroid_frontend.Services.GameState.Playing);
   }
 
   [JSInvokable]

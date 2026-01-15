@@ -177,11 +177,15 @@ const GameEngine = {
     this.lastObstacleSpawn = performance.now();
 
     // Notify Blazor about game restart to reset Arduino states
+    // This must complete before game loop starts to ensure proper state sync
     if (this.dotNetHelper) {
-      this.dotNetHelper.invokeMethodAsync('OnGameRestart');
+      this.dotNetHelper.invokeMethodAsync('OnGameRestart').then(() => {
+        // Start game loop only after Blazor has updated the state
+        this.gameLoop = requestAnimationFrame((t) => this.update(t));
+      });
+    } else {
+      this.gameLoop = requestAnimationFrame((t) => this.update(t));
     }
-
-    this.gameLoop = requestAnimationFrame((t) => this.update(t));
   },
 
   reset: function () {
@@ -974,7 +978,6 @@ const GameEngine = {
 
     ctx.fillStyle = '#00d4ff';
     ctx.font = '20px system-ui, sans-serif';
-    ctx.fillText('Click to play again', this.canvas.width / 2, this.canvas.height / 2 + 100);
   },
 
   // Blazor interop notifications
