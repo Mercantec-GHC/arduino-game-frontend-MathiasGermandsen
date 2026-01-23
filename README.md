@@ -2,7 +2,17 @@
 
 A co-op asteroid escape game built with Blazor Server, featuring both keyboard controls and Arduino MKR WiFi 1010 controller support.
 
-## 🎮 Game Overview
+## � Demo Video
+
+https://github.com/user-attachments/assets/docs/video/MicrosoftTeams-video%20(1).mp4
+
+<video src="docs/video/MicrosoftTeams-video (1).mp4" controls width="600"></video>
+
+[📺 Watch the gameplay video](docs/video/MicrosoftTeams-video%20(1).mp4)
+
+---
+
+## �🎮 Game Overview
 
 Navigate your spaceship through an asteroid field! Two players control the ship - one for left movement, one for right. Survive as long as possible while your score increases over time.
 
